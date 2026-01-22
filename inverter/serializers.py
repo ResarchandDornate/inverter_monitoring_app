@@ -6,7 +6,7 @@ from .models import Manufacturer, Inverter, Activation, InverterData, PowerGener
 class ManufacturerSerializer(serializers.ModelSerializer):
     class Meta:
         model = Manufacturer
-        fields = ['id', 'company_name', 'company_alias', 'company_address', 'phone', 'email', 'country', 'gst_number', 'created_at', 'updated_at']
+        fields = ['id', 'company_name', 'company_alias', 'company_address', 'phone', 'email', 'country', 'website', 'gst_number', 'created_at', 'updated_at']
         read_only_fields = ['id', 'created_at', 'updated_at']
 
     def validate_gst_number(self, value):
@@ -24,9 +24,10 @@ class InverterSerializer(serializers.ModelSerializer):
     class Meta:
         model = Inverter
         fields = [
-            'id', 'user', 'manufacturer', 'manufacturer_id', 'name', 'description', 'inverter_capacity',
-            'installation_date', 'serial_number', 'address', 'city', 'state', 'country',
-            'latitude', 'longitude', 'efficiency_factor', 'created_at', 'updated_at'
+            'id', 'user', 'manufacturer', 'manufacturer_id', 'name', 'model', 'description', 
+            'inverter_capacity', 'installation_date', 'serial_number', 'address', 'city', 
+            'state', 'country', 'latitude', 'longitude', 'efficiency_factor', 
+            'created_at', 'updated_at'
         ]
         read_only_fields = ['id', 'user', 'created_at', 'updated_at']
 

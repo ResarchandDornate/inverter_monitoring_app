@@ -1,22 +1,25 @@
-from rest_framework import viewsets, permissions, status
-from rest_framework.decorators import action
-from rest_framework.response import Response
-from django_filters.rest_framework import DjangoFilterBackend
-from rest_framework.filters import SearchFilter, OrderingFilter
-from django.utils import timezone
-from datetime import datetime
-from datetime import timedelta 
-from .models import Manufacturer, Inverter, Activation, InverterData, PowerGeneration
-from .serializers import (
-    ManufacturerSerializer, InverterSerializer, ActivationSerializer,
-    InverterDataSerializer, PowerGenerationSerializer
-)
-from rest_framework.decorators import api_view, permission_classes
+"""REST API views for inverter manufacturers, devices and power data."""
+
+from rest_framework import permissions, status, viewsets
+from rest_framework.decorators import action, api_view, permission_classes
+from rest_framework.filters import OrderingFilter, SearchFilter
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
-from rest_framework import status
-from django.db.models import Count
-from django.db.models import Sum, Avg, Max, Min
+from django.db import connection
+from django.db.models import Avg, Count, Max, Min, Sum
+from django_filters.rest_framework import DjangoFilterBackend
+from django.utils import timezone
+from datetime import datetime, timedelta
+
+from .models import Activation, Inverter, InverterData, Manufacturer, PowerGeneration
+from .serializers import (
+    ActivationSerializer,
+    InverterDataSerializer,
+    InverterSerializer,
+    ManufacturerSerializer,
+    PowerGenerationSerializer,
+)
+from .mqtt_client import get_last_message_timestamp, mqtt_client
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
@@ -53,7 +56,10 @@ class InverterViewSet(viewsets.ModelViewSet):
     ordering_fields = ['name', 'installation_date', 'created_at']
     
     def get_queryset(self):
-        return Inverter.objects.filter(user=self.request.user)
+        return (
+            Inverter.objects.select_related("manufacturer")
+            .filter(user=self.request.user)
+        )
 
     def perform_create(self, serializer):
         serializer.save(user=self.request.user)
@@ -111,7 +117,10 @@ class ActivationViewSet(viewsets.ModelViewSet):
     ordering_fields = ['activation_time']
 
     def get_queryset(self):
-        return Activation.objects.filter(user=self.request.user)
+        return (
+            Activation.objects.select_related("inverter")
+            .filter(user=self.request.user)
+        )
 
     def perform_create(self, serializer):
         serializer.save(user=self.request.user)
@@ -124,7 +133,10 @@ class InverterDataViewSet(viewsets.ModelViewSet):
     ordering_fields = ['timestamp']
 
     def get_queryset(self):
-        return InverterData.objects.filter(inverter__user=self.request.user)
+        return (
+            InverterData.objects.select_related("inverter", "manufacturer")
+            .filter(inverter__user=self.request.user)
+        )
 
 class PowerGenerationViewSet(viewsets.ModelViewSet):
     serializer_class = PowerGenerationSerializer
@@ -134,7 +146,10 @@ class PowerGenerationViewSet(viewsets.ModelViewSet):
     ordering_fields = ['measurement_time']
 
     def get_queryset(self):
-        return PowerGeneration.objects.filter(inverter__user=self.request.user)
+        return (
+            PowerGeneration.objects.select_related("inverter")
+            .filter(inverter__user=self.request.user)
+        )
     
     @action(detail=False, methods=['get'])
     def recent(self, request):
@@ -414,3 +429,32 @@ def create_power_generation_data(request):
             'status': 'error',
             'message': str(e)
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(["GET"])
+def mqtt_health(request):
+    """Simple health endpoint for MQTT connectivity."""
+    last_ts = get_last_message_timestamp()
+    is_connected = bool(mqtt_client and mqtt_client.is_connected())
+    return Response(
+        {
+            "mqtt_connected": is_connected,
+            "last_message_timestamp": last_ts,
+        },
+        status=status.HTTP_200_OK,
+    )
+
+
+@api_view(["GET"])
+def db_health(request):
+    """Simple health endpoint for database connectivity."""
+    try:
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT 1;")
+            cursor.fetchone()
+        return Response({"database_ok": True}, status=status.HTTP_200_OK)
+    except Exception as exc:  # pragma: no cover - defensive
+        return Response(
+            {"database_ok": False, "error": str(exc)},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )

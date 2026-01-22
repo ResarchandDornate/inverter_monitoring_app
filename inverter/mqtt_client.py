@@ -1,215 +1,172 @@
+"""MQTT client integration for inverter monitoring.
+
+This module is responsible for:
+* Connecting to the Mosquitto broker
+* Subscribing to inverter topics
+* Processing messages synchronously (Redis/Celery removed for cost optimization)
+* Broadcasting real-time updates via Channels
+"""
+
+from __future__ import annotations
+
 import json
 import logging
+import time
+from typing import Optional
+
 import paho.mqtt.client as mqtt
-from channels.layers import get_channel_layer
 from asgiref.sync import async_to_sync
+from channels.layers import get_channel_layer
 from django.conf import settings
-import re
-from decimal import Decimal
-from django.utils import timezone
-from datetime import datetime
+
+from .services import (
+    extract_inverter_id,
+    generate_message_id,
+    should_save_message,
+    validate_inverter_message,
+    normalize_inverter_data,
+    build_inverter_data_kwargs,
+)
+from .models import Inverter, InverterData
+from django.db import transaction
 
 logger = logging.getLogger(__name__)
 channel_layer = get_channel_layer()
-mqtt_client = None
+
+# Shared client instance used by the application
+mqtt_client: Optional[mqtt.Client] = None
+
+# Simple metrics for health checks
+last_message_timestamp: Optional[float] = None
+consecutive_connect_failures: int = 0
+
 
 def on_connect(client, userdata, flags, rc):
-    """Callback for when the client receives a CONNACK response from the server (VERSION1)"""
+    """Callback when the client receives a CONNACK from the broker."""
+    global consecutive_connect_failures
+
     if rc == 0:
+        consecutive_connect_failures = 0
         logger.info("Connected to MQTT broker successfully")
-        # Subscribe to inverter topics
         client.subscribe("inverter/+/data")
         client.subscribe("inverters_esp32c3")
         logger.info("Subscribed to MQTT topics")
     else:
-        logger.error(f"Failed to connect to MQTT broker with result code {rc}")
+        consecutive_connect_failures += 1
+        logger.error("Failed to connect to MQTT broker (rc=%s)", rc)
+
 
 def on_message(client, userdata, msg):
-    """Handle incoming MQTT messages"""
+    """Handle incoming MQTT messages quickly and delegate work."""
+    global last_message_timestamp
+
+    topic = msg.topic
+    payload = msg.payload.decode("utf-8")
+    message_id = generate_message_id()
+    last_message_timestamp = time.time()
+
+    logger.info(
+        "MQTT message received",
+        extra={
+            "component": "mqtt_client",
+            "topic": topic,
+            "message_id": message_id,
+        },
+    )
+
     try:
-        topic = msg.topic
-        payload = msg.payload.decode('utf-8')
-        
-        logger.info(f"Received message on topic {topic}: {payload}")
-        
-        # Parse JSON data
-        try:
-            data = json.loads(payload)
-        except json.JSONDecodeError as e:
-            logger.error(f"Failed to parse JSON: {e}")
-            return
-        
-        # Extract inverter ID from topic or data
-        inverter_id = extract_inverter_id_from_topic(topic)
-        if not inverter_id and 'inverter_id' in data:
-            inverter_id = data['inverter_id']
-        
-        # Save to database if it's inverter data
-        if any(key in data for key in ['VG', 'IG', 'VPV', 'IPV', 'TEMP1', 'TEMP2']):
-            save_inverter_data(data, inverter_id)
-        
-        # Send to WebSocket
-        message = {
-            'topic': topic,
-            'data': data,
-            'timestamp': data.get('timestamp', None)
-        }
-        
-        if channel_layer:
-            async_to_sync(channel_layer.group_send)(
-                'inverter_updates',
-                {
-                    'type': 'inverter_message',
-                    'message': message
-                }
-            )
-        
-    except Exception as e:
-        logger.error(f"Error processing MQTT message: {e}")
+        data = json.loads(payload)
+    except json.JSONDecodeError:
+        logger.warning(
+            "Failed to parse MQTT payload as JSON",
+            extra={"component": "mqtt_client", "topic": topic, "message_id": message_id},
+        )
+        return
 
-def save_inverter_data(data, inverter_id):
-    """Save inverter data to database with proper field mapping"""
+    if not should_save_message(data):
+        logger.debug(
+            "Message skipped by filter",
+            extra={"component": "mqtt_client", "topic": topic, "message_id": message_id},
+        )
+        return
+
+    cleaned = validate_inverter_message(data)
+    inverter_id = extract_inverter_id(topic, data)
+
+    # Process message synchronously (Redis/Celery removed for cost optimization)
     try:
-        # Import here to avoid circular imports
-        from .models import InverterData, Inverter, Manufacturer
-        
-        # Get or create inverter instance
-        inverter_instance = get_or_create_inverter(inverter_id)
-        
-        # Map ESP32 data to your database model
-        vg = float(data.get('VG', 0))  # Grid voltage
-        ig = float(data.get('IG', 0))  # Grid current
-        vpv = float(data.get('VPV', 0))  # PV voltage
-        ipv = float(data.get('IPV', 0))  # PV current
-        temp1 = float(data.get('TEMP1', 0))  # Temperature 1
-        temp2 = float(data.get('TEMP2', 0))  # Temperature 2
-        
-        # Calculate power (P = V * I)
-        grid_power = vg * ig  # Grid power
-        pv_power = vpv * ipv  # PV power
-        
-        # Use the higher voltage (grid or PV) as main voltage
-        main_voltage = max(vg, vpv)
-        # Use the higher current (grid or PV) as main current  
-        main_current = max(ig, ipv)
-        # Use the higher power as main power
-        main_power = max(grid_power, pv_power)
-        # Use average temperature
-        avg_temperature = (temp1 + temp2) / 2
-        
-        # Handle timestamp - ESP32 sends milliseconds since boot, convert to Django datetime
-        esp32_timestamp = data.get('timestamp', None)
-        if esp32_timestamp:
-            # ESP32 timestamp is milliseconds since boot, we'll use current time instead
-            # since we can't convert boot time to real time without knowing boot time
-            record_timestamp = timezone.now()
-            logger.info(f"ESP32 timestamp: {esp32_timestamp}ms, using current time: {record_timestamp}")
-        else:
-            record_timestamp = timezone.now()
-        
-        # Create database record with timestamp
-        inverter_data = InverterData.objects.create(
-            inverter=inverter_instance,
-            manufacturer=inverter_instance.manufacturer,
-            voltage=Decimal(str(round(main_voltage, 2))),
-            current=Decimal(str(round(main_current, 2))),
-            power=Decimal(str(round(main_power, 2))),
-            temperature=avg_temperature,
-            grid_connected=vg > 200,  # Assume grid connected if voltage > 200V
-            timestamp=record_timestamp  # Add the timestamp field
+        _process_inverter_message_sync(
+            message_id=message_id, topic=topic, data=cleaned, inverter_id=inverter_id
         )
-        
-        logger.info(f"SUCCESS: Saved inverter data to database: ID={inverter_data.id}, "
-                   f"V={main_voltage}V, I={main_current}A, P={main_power}W, T={avg_temperature}C, "
-                   f"Time={record_timestamp}")
-        
-        # Also log the detailed data for debugging
-        logger.info(f"DETAILS: Grid: {vg}V/{ig}A/{grid_power}W, "
-                   f"PV: {vpv}V/{ipv}A/{pv_power}W, Temps: {temp1}C/{temp2}C")
-        
-    except Exception as e:
-        logger.error(f"Failed to save inverter data to database: {e}")
-        logger.error(f"Data received: {data}")
-        # Print the full error for debugging
-        import traceback
-        logger.error(f"Full error: {traceback.format_exc()}")
-
-def get_or_create_inverter(inverter_id):
-    """Get or create an inverter instance"""
-    try:
-        from .models import Inverter, Manufacturer
-        
-        # Try to get existing inverter
-        try:
-            inverter = Inverter.objects.get(serial_number=inverter_id)
-            return inverter
-        except Inverter.DoesNotExist:
-            pass
-        
-        # Get or create manufacturer
-        manufacturer, created = Manufacturer.objects.get_or_create(
-            name="ESP32",
-            defaults={
-                'country': 'Unknown',
-                'website': 'https://espressif.com'
-            }
+    except Exception as exc:
+        logger.error(
+            "Failed to process MQTT message: %s",
+            exc,
+            extra={"component": "mqtt_client", "topic": topic, "message_id": message_id},
+            exc_info=True,
         )
-        
-        if created:
-            logger.info(f"Created new manufacturer: {manufacturer.name}")
-        
-        # Create new inverter
-        inverter = Inverter.objects.create(
-            manufacturer=manufacturer,
-            model=f"ESP32-{inverter_id}",
-            serial_number=inverter_id,
-            capacity=5000,  # Default 5kW capacity
-            installation_date='2024-01-01'
+
+    # Broadcast to WebSocket subscribers with the raw data so the UI
+    # can display immediately while the database write is in progress.
+    message = {
+        "topic": topic,
+        "data": data,
+        "timestamp": data.get("timestamp"),
+        "message_id": message_id,
+    }
+
+    if channel_layer:
+        async_to_sync(channel_layer.group_send)(
+            "inverter_updates",
+            {
+                "type": "inverter_message",
+                "message": message,
+            },
         )
-        
-        logger.info(f"Created new inverter: {inverter.model} (ID: {inverter_id})")
-        return inverter
-        
-    except Exception as e:
-        logger.error(f"Error getting/creating inverter: {e}")
-        # Return None and let the calling function handle it
-        raise
 
-def extract_inverter_id_from_topic(topic):
-    """Extract inverter ID from MQTT topic: inverter/<id>/data or inverters_esp32c3"""
-    match = re.search(r'inverter/([^/]+)/data', topic)
-    if match:
-        return match.group(1)
-    if topic == "inverters_esp32c3":
-        return "esp32c3"
-    return None
 
-def start_mqtt_client():
-    """Start the MQTT client and connect to the broker"""
+def start_mqtt_client(max_retries: int = 5, base_delay: float = 2.0):
+    """Start the MQTT client and connect to the broker with retry logic."""
     global mqtt_client
-    try:
-        # Use the simple client without callback API version for compatibility
-        mqtt_client = mqtt.Client(client_id=settings.MQTT_CLIENT_ID)
-        
-        # Set callbacks
-        mqtt_client.on_connect = on_connect
-        mqtt_client.on_message = on_message
 
-        # Set credentials if provided
-        if hasattr(settings, 'MQTT_USERNAME') and hasattr(settings, 'MQTT_PASSWORD'):
-            mqtt_client.username_pw_set(settings.MQTT_USERNAME, settings.MQTT_PASSWORD)
+    client = mqtt.Client(client_id=settings.MQTT_CLIENT_ID)
+    client.on_connect = on_connect
+    client.on_message = on_message
 
-        # Connect to broker
-        mqtt_client.connect(settings.MQTT_BROKER_HOST, settings.MQTT_BROKER_PORT, 60)
-        mqtt_client.loop_start()
-        logger.info(f"Started MQTT client, connected to {settings.MQTT_BROKER_HOST}:{settings.MQTT_BROKER_PORT}")
-        return mqtt_client
-    except Exception as e:
-        logger.error(f"Failed to connect to MQTT broker: {str(e)}")
-        return None
+    if getattr(settings, "MQTT_USERNAME", None) and getattr(
+        settings, "MQTT_PASSWORD", None
+    ):
+        client.username_pw_set(settings.MQTT_USERNAME, settings.MQTT_PASSWORD)
+
+    attempt = 0
+    while True:
+        try:
+            client.connect(settings.MQTT_BROKER_HOST, settings.MQTT_BROKER_PORT, 60)
+            client.loop_start()
+            mqtt_client = client
+            logger.info(
+                "Started MQTT client, connected to %s:%s",
+                settings.MQTT_BROKER_HOST,
+                settings.MQTT_BROKER_PORT,
+            )
+            return mqtt_client
+        except Exception as exc:
+            attempt += 1
+            logger.error(
+                "Failed to connect to MQTT broker (attempt %s/%s): %s",
+                attempt,
+                max_retries,
+                exc,
+            )
+            if max_retries and attempt >= max_retries:
+                logger.error("Giving up connecting to MQTT broker after %s attempts", attempt)
+                return None
+            sleep_for = base_delay * (2 ** (attempt - 1))
+            time.sleep(min(sleep_for, 60))
+
 
 def stop_mqtt_client():
-    """Stop the MQTT client"""
+    """Stop the MQTT client loop and disconnect from the broker."""
     global mqtt_client
     if mqtt_client:
         mqtt_client.loop_stop()
@@ -217,21 +174,107 @@ def stop_mqtt_client():
         logger.info("MQTT client stopped")
         mqtt_client = None
 
+
 def publish_to_mqtt(topic, payload):
-    """Publish message to MQTT broker"""
-    global mqtt_client
+    """Publish a JSON payload to the MQTT broker."""
     if mqtt_client and mqtt_client.is_connected():
         try:
             result = mqtt_client.publish(topic, json.dumps(payload))
             if result.rc == mqtt.MQTT_ERR_SUCCESS:
-                logger.info(f"Published to {topic}: {payload}")
+                logger.debug("Published MQTT message", extra={"topic": topic})
                 return True
-            else:
-                logger.error(f"Failed to publish to {topic}: {result.rc}")
-                return False
-        except Exception as e:
-            logger.error(f"Error publishing to MQTT: {e}")
-            return False
+            logger.error("Failed to publish MQTT message (rc=%s)", result.rc)
+        except Exception as exc:
+            logger.error("Error publishing to MQTT: %s", exc)
     else:
         logger.error("MQTT client not connected")
-        return False
+    return False
+
+
+def get_last_message_timestamp() -> Optional[float]:
+    """Return the Unix timestamp of the last received MQTT message, if any."""
+    return last_message_timestamp
+
+
+def _process_inverter_message_sync(
+    message_id: str, topic: str, data: dict, inverter_id: Optional[str] = None
+) -> None:
+    """Process inverter message synchronously (replaces Celery task).
+    
+    Args:
+        message_id: Correlation ID for tracing logs
+        topic: MQTT topic
+        data: Cleaned numeric payload
+        inverter_id: Optional inverter identifier
+    """
+    if not inverter_id:
+        logger.warning(
+            "MQTT message dropped: could not determine inverter_id",
+            extra={"component": "mqtt_client", "topic": topic, "message_id": message_id},
+        )
+        return
+
+    normalized = normalize_inverter_data(inverter_id, data)
+    
+    with transaction.atomic():
+        inverter = _get_or_create_inverter(inverter_id)
+        kwargs = build_inverter_data_kwargs(normalized, inverter)
+        inverter_data = InverterData.objects.create(**kwargs)
+
+    logger.info(
+        "Inverter data persisted",
+        extra={
+            "component": "mqtt_client",
+            "topic": topic,
+            "message_id": message_id,
+            "inverter_id": inverter_id,
+            "record_id": inverter_data.id,
+        },
+    )
+
+
+def _get_or_create_inverter(inverter_id: str):
+    """Get or create an Inverter instance.
+    
+    When creating a new inverter automatically from MQTT data, only the
+    serial_number is required. All other fields are optional.
+    """
+    try:
+        return Inverter.objects.get(serial_number=inverter_id)
+    except Inverter.DoesNotExist:
+        # Try to find a default manufacturer
+        manufacturer = None
+        try:
+            from .models import Manufacturer
+            manufacturer = Manufacturer.objects.filter(
+                company_name__icontains="ESP32"
+            ).first()
+            if not manufacturer:
+                manufacturer, _ = Manufacturer.objects.get_or_create(
+                    company_name="ESP32",
+                    defaults={
+                        "country": "Unknown",
+                        "website": "https://espressif.com"
+                    }
+                )
+        except Exception as e:
+            logger.warning(
+                "Could not set manufacturer for new inverter",
+                extra={"inverter_id": inverter_id, "error": str(e)}
+            )
+
+        inverter = Inverter.objects.create(
+            manufacturer=manufacturer,
+            serial_number=inverter_id,
+            name=f"Inverter {inverter_id}",
+            model=f"ESP32-{inverter_id}",
+        )
+        logger.info(
+            "Created inverter on-the-fly from MQTT data",
+            extra={
+                "inverter_id": inverter_id,
+                "component": "mqtt_client"
+            }
+        )
+        return inverter
+

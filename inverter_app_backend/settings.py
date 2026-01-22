@@ -13,24 +13,26 @@ import os
 from pathlib import Path
 import datetime
 from dotenv import load_dotenv
-from celery.schedules import crontab
-
-load_dotenv()
-
+# Celery removed - no longer needed
+from logging.handlers import RotatingFileHandler  # noqa: F401  (used via LOGGING dict)
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
+load_dotenv(BASE_DIR / ".env")
 
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/4.2/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
+SECRET_KEY = os.getenv("SECRET_KEY")
 
+if not SECRET_KEY:
+    raise Exception("SECRET_KEY is missing")
 
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
 ALLOWED_EMAIL_DOMAINS = ['ornatesolar.com', 'ornatesolar.in', 'gmail.com'] 
-SECRET_KEY=os.environ.get("DJANGO_SECRET_KEY")
+
 # Application definition
 INSTALLED_APPS = [
     "django.contrib.admin",
@@ -45,7 +47,6 @@ INSTALLED_APPS = [
     'inverter',
     'django_filters',
     'master',
-    'timescaledb',
     'channels',
     
 ]
@@ -131,13 +132,13 @@ MQTT_PORT = MQTT_BROKER_PORT
 MQTT_USERNAME = None  
 MQTT_PASSWORD = None  
 
-# Logging Configuration# Enhanced Logging
+# Logging configuration: console + rotating file handlers.
 LOGGING = {
     'version': 1,
     'disable_existing_loggers': False,
     'formatters': {
         'verbose': {
-            'format': '{levelname} {asctime} {module} {process:d} {thread:d} {message}',
+            'format': '{levelname} {asctime} {name} {process:d} {thread:d} {message}',
             'style': '{',
         },
         'simple': {
@@ -150,9 +151,11 @@ LOGGING = {
             'class': 'logging.StreamHandler',
             'formatter': 'simple',
         },
-        'file': {
-            'class': 'logging.FileHandler',
-            'filename': BASE_DIR / 'logs' / 'mqtt.log',
+        'rotating_file': {
+            'class': 'logging.handlers.RotatingFileHandler',
+            'filename': BASE_DIR / 'logs' / 'application.log',
+            'maxBytes': 10 * 1024 * 1024,  # 10 MB
+            'backupCount': 5,
             'formatter': 'verbose',
         },
     },
@@ -162,7 +165,17 @@ LOGGING = {
     },
     'loggers': {
         'inverter': {
-            'handlers': ['console', 'file'],
+            'handlers': ['console', 'rotating_file'],
+            'level': 'INFO',
+            'propagate': False,
+        },
+        'inverter.mqtt_client': {
+            'handlers': ['console', 'rotating_file'],
+            'level': 'INFO',
+            'propagate': False,
+        },
+        'inverter.ingest': {
+            'handlers': ['console', 'rotating_file'],
             'level': 'INFO',
             'propagate': False,
         },
@@ -177,22 +190,8 @@ LOGGING = {
 LOGS_DIR = BASE_DIR / 'logs'
 LOGS_DIR.mkdir(exist_ok=True)
 
-# Redis Configuration
-REDIS_URL = 'redis://localhost:6379/0'
-
-# Celery Configuration
-CELERY_BROKER_URL = REDIS_URL
-CELERY_RESULT_BACKEND = REDIS_URL
-CELERY_ACCEPT_CONTENT = ['json']
-CELERY_TASK_SERIALIZER = 'json'
-CELERY_RESULT_SERIALIZER = 'json'
-
-CELERY_BEAT_SCHEDULE = {
-    'generate-random-data-every-5-minutes': {
-        'task': 'inverter.tasks.generate_random_inverter_data',
-        'schedule': 300.0,
-    },
-}
+# Celery removed - using synchronous processing for cost optimization
+# MQTT messages are now processed directly without background workers
 
 # Templates Configuration
 TEMPLATES = [
@@ -235,13 +234,14 @@ WSGI_APPLICATION = "inverter_app_backend.wsgi.application"
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.postgresql',
-        'NAME': 'inverter_db',
-        'USER': 'postgres',
-        'PASSWORD': 'darpan!@#',
-        'HOST': 'localhost',
-        'PORT': '5432',
+        'NAME': os.getenv('DB_NAME'),
+        'USER': os.getenv('DB_USER'),
+        'PASSWORD': os.getenv('DB_PASSWORD'),
+        'HOST': os.getenv('DB_HOST'),
+        'PORT': os.getenv('DB_PORT'),
     }
 }
+
 
 # Location detection API keys
 IPSTACK_API_KEY = '231d2b6bd9b1ce5e217ee3c504f42cc2'

@@ -1,8 +1,12 @@
+"""Channels consumer for streaming inverter data over WebSockets."""
+
 import json
-from channels.generic.websocket import AsyncWebsocketConsumer
-from channels.db import database_sync_to_async
-from django.utils import timezone
 from datetime import timedelta
+
+from channels.db import database_sync_to_async
+from channels.generic.websocket import AsyncWebsocketConsumer
+from django.db.models import Avg, Max, Min
+from django.utils import timezone
 
 class InverterConsumer(AsyncWebsocketConsumer):
     async def connect(self):
@@ -117,15 +121,18 @@ class InverterConsumer(AsyncWebsocketConsumer):
     def get_latest_inverter_data(self):
         """Get latest inverter data from database"""
         from .models import InverterData, Inverter
-        
-        # Get all inverters with their latest data
+
+        # Eagerly load manufacturer to avoid N+1 queries when serialising.
+        inverters = (
+            Inverter.objects.select_related("manufacturer")
+            .all()
+        )
+
         inverters_data = []
-        
-        inverters = Inverter.objects.all()
         for inverter in inverters:
             latest_data = InverterData.objects.filter(
                 inverter=inverter
-            ).order_by('-timestamp').first()
+            ).order_by("-timestamp").select_related("inverter", "inverter__manufacturer").first()
             
             if latest_data:
                 inverters_data.append({
@@ -148,22 +155,22 @@ class InverterConsumer(AsyncWebsocketConsumer):
     def get_historical_inverter_data(self, hours=24):
         """Get historical inverter data for charts"""
         from .models import InverterData, Inverter
-        from django.db.models import Avg, Max, Min
         
         # Calculate time range
         end_time = timezone.now()
         start_time = end_time - timedelta(hours=hours)
         
         historical_data = {}
-        
-        inverters = Inverter.objects.all()
+
+        # Preload manufacturer to reduce per-inverter database hits.
+        inverters = Inverter.objects.select_related("manufacturer").all()
         for inverter in inverters:
             # Get data points for the time range
             data_points = InverterData.objects.filter(
                 inverter=inverter,
                 timestamp__gte=start_time,
                 timestamp__lte=end_time
-            ).order_by('timestamp')
+            ).order_by("timestamp").select_related("inverter")
             
             # Convert to list for JSON serialization
             points = []
