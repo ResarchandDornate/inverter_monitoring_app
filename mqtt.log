@@ -1,0 +1,84 @@
+Started MQTT client, connected to localhost:1883
+Connected to MQTT broker successfully
+Started MQTT client, connected to localhost:1883
+Connected to MQTT broker successfully
+Started MQTT client, connected to localhost:1883
+Connected to MQTT broker successfully
+Started MQTT client, connected to localhost:1883
+Connected to MQTT broker successfully
+Started MQTT client, connected to localhost:1883
+Connected to MQTT broker successfully
+Started MQTT client, connected to localhost:1883
+Connected to MQTT broker successfully
+Started MQTT client, connected to localhost:1883
+Connected to MQTT broker successfully
+Subscribed to topics: inverters_esp32c3, inverter/+/data
+Started MQTT client, connected to localhost:1883
+Connected to MQTT broker successfully
+Subscribed to topics: inverters_esp32c3, inverter/+/data
+Failed to connect to MQTT broker: [WinError 10061] No connection could be made because the target machine actively refused it
+Failed to connect to MQTT broker: [WinError 10061] No connection could be made because the target machine actively refused it
+Failed to connect to MQTT broker: [WinError 10061] No connection could be made because the target machine actively refused it
+Failed to connect to MQTT broker: [WinError 10061] No connection could be made because the target machine actively refused it
+Failed to connect to MQTT broker: [WinError 10061] No connection could be made because the target machine actively refused it
+Failed to connect to MQTT broker: [WinError 10061] No connection could be made because the target machine actively refused it
+Failed to connect to MQTT broker: [Errno 11001] getaddrinfo failed
+Started MQTT client, connected to localhost:1883
+Connected to MQTT broker successfully
+Subscribed to topics: inverters, inverter/+/data
+Started MQTT client, connected to localhost:1883
+Connected to MQTT broker successfully
+Subscribed to topics: inverters, inverter/+/data
+Connected to MQTT broker successfully
+Subscribed to topics: inverters, inverter/+/data
+Started MQTT client, connected to localhost:1883
+Connected to MQTT broker successfully
+Subscribed to topic: inverters/+
+Started MQTT client, connected to localhost:1883
+Connected to MQTT broker successfully
+Subscribed to topic: inverters/+
+Connected to MQTT broker successfully
+Started MQTT client, connected to localhost:1883
+Subscribed to topic: inverters/+/+
+Started MQTT client, connected to localhost:1883
+Started MQTT client, connected to localhost:1883
+Connected to MQTT broker successfully
+Started MQTT client, connected to localhost:1883
+Connected to MQTT broker successfully
+Started MQTT client, connected to localhost:1883
+Connected to MQTT broker successfully
+Subscribed to topic: inverters/+/+
+Started MQTT client, connected to localhost:1883
+Connected to MQTT broker successfully
+Subscribed to topic: inverters/+/+
+MQTT client stopped
+Started MQTT client, connected to localhost:1883
+Connected to MQTT broker successfully
+Subscribed to topic: inverters/+/+
+MQTT client stopped
+Started MQTT client, connected to localhost:1883
+Connected to MQTT broker successfully
+Subscribed to topic: inverters/+/+
+MQTT client stopped
+Started MQTT client, connected to localhost:1883
+Connected to MQTT broker successfully
+Subscribed to topic: inverters/+/+
+MQTT client stopped
+Connected to MQTT broker successfully
+Started MQTT client, connected to localhost:1883
+Subscribed to topic: inverters/+/+
+Subscribed to topic: inverters_esp32c3
+MQTT client stopped
+Failed to connect to MQTT broker: [WinError 10061] No connection could be made because the target machine actively refused it
+Connected to MQTT broker successfully
+Started MQTT client, connected to localhost:1883
+Subscribed to topic: inverters/+/+
+Subscribed to topic: inverters_esp32c3
+MQTT client stopped
+Failed to connect to MQTT broker: [WinError 10061] No connection could be made because the target machine actively refused it
+Failed to connect to MQTT broker: [WinError 10061] No connection could be made because the target machine actively refused it
+Started MQTT client, connected to localhost:1883
+Connected to MQTT broker successfully
+Subscribed to topic: inverter/+/+
+Subscribed to topic: inverters_esp32c3
+Failed to connect to MQTT broker: [WinError 10061] No connection could be made because the target machine actively refused it

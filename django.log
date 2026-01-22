@@ -1,0 +1,2 @@
+INFO 2025-05-29 13:12:37,893 autoreload 13260 2328 Watching for file changes with StatReloader
+INFO 2025-05-29 13:22:39,574 autoreload 13260 2328 C:\inverter_app\inverter_app_backend\inverter_app_backend\settings.py changed, reloading.

@@ -30,7 +30,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 DEBUG = True
 
 ALLOWED_EMAIL_DOMAINS = ['ornatesolar.com', 'ornatesolar.in', 'gmail.com'] 
-
+SECRET_KEY=os.environ.get("DJANGO_SECRET_KEY")
 # Application definition
 INSTALLED_APPS = [
     "django.contrib.admin",
