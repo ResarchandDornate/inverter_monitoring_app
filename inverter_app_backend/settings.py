@@ -13,25 +13,23 @@ import os
 from pathlib import Path
 import datetime
 from dotenv import load_dotenv
-# Celery removed - no longer needed
 from logging.handlers import RotatingFileHandler  # noqa: F401  (used via LOGGING dict)
+
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 load_dotenv(BASE_DIR / ".env")
-
-# Quick-start development settings - unsuitable for production
-# See https://docs.djangoproject.com/en/4.2/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
 SECRET_KEY = os.getenv("SECRET_KEY")
 
 if not SECRET_KEY:
-    raise Exception("SECRET_KEY is missing")
+    raise Exception("SECRET_KEY is missing from environment variables")
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+DEBUG = os.getenv('DEBUG', 'False').lower() in ('true', '1', 'yes')
 
-ALLOWED_EMAIL_DOMAINS = ['ornatesolar.com', 'ornatesolar.in', 'gmail.com'] 
+# Allowed email domains for registration
+ALLOWED_EMAIL_DOMAINS = ['ornatesolar.com', 'ornatesolar.in', 'gmail.com']
 
 # Application definition
 INSTALLED_APPS = [
@@ -48,20 +46,18 @@ INSTALLED_APPS = [
     'django_filters',
     'master',
     'channels',
-    
 ]
 
-# ASGI Configuration - Move this before CHANNEL_LAYERS
+# ASGI Configuration
 ASGI_APPLICATION = 'inverter_app_backend.routing.application'
 
-# Channel Layers Configuration
+# Channel Layers Configuration (In-Memory for single server deployment)
+# Note: For multi-server deployments, consider using Redis
 CHANNEL_LAYERS = {
     'default': {
         'BACKEND': 'channels.layers.InMemoryChannelLayer',
     },
 }
-
-
 
 MIDDLEWARE = [
     "corsheaders.middleware.CorsMiddleware",
@@ -75,20 +71,23 @@ MIDDLEWARE = [
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
 
-ALLOWED_HOSTS = ['192.168.2.150', '192.168.2.133', 'localhost', '127.0.0.1', '192.168.1.222','*','192.168.0.128']
+# Allowed hosts - configure via environment variable
+ALLOWED_HOSTS = os.getenv('ALLOWED_HOSTS', 'localhost,127.0.0.1').split(',')
+
 ROOT_URLCONF = "inverter_app_backend.urls"
 
-# CORS settings
-CORS_ALLOW_ALL_ORIGINS = True
-CORS_ORIGIN_ALLOW_ALL = True
-CORS_ALLOW_CREDENTIALS = True
+# CORS settings - restrictive by default
+CORS_ALLOW_ALL_ORIGINS = os.getenv('CORS_ALLOW_ALL_ORIGINS', 'False').lower() in ('true', '1', 'yes')
 
-CORS_ALLOWED_ORIGINS = [
-    "http://localhost:8081",
-    "http://127.0.0.1:8081",
-    "http://192.168.2.150:8081",
-    "http://192.168.2.133:8081",
-]
+if CORS_ALLOW_ALL_ORIGINS:
+    # Only use in development
+    CORS_ORIGIN_ALLOW_ALL = True
+    CORS_ALLOW_CREDENTIALS = True
+else:
+    # Production: specific origins only
+    CORS_ALLOWED_ORIGINS = os.getenv('CORS_ALLOWED_ORIGINS', '').split(',')
+    CORS_ALLOWED_ORIGINS = [origin.strip() for origin in CORS_ALLOWED_ORIGINS if origin.strip()]
+    CORS_ALLOW_CREDENTIALS = True
 
 CORS_ALLOW_METHODS = [
     'DELETE',
@@ -111,28 +110,40 @@ CORS_ALLOW_HEADERS = [
     'x-requested-with',
 ]
 
+# Security settings for production
+if not DEBUG:
+    SECURE_SSL_REDIRECT = True
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE = True
+    SECURE_HSTS_SECONDS = 31536000  # 1 year
+    SECURE_HSTS_INCLUDE_SUBDOMAINS = True
+    SECURE_HSTS_PRELOAD = True
+    SECURE_CONTENT_TYPE_NOSNIFF = True
+    SECURE_BROWSER_XSS_FILTER = True
+    X_FRAME_OPTIONS = 'DENY'
+    SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+
 # Email Configuration
 EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
-EMAIL_HOST = os.environ.get('EMAIL_HOST', 'smtp.gmail.com')
-EMAIL_PORT = int(os.environ.get('EMAIL_PORT', 587))
-EMAIL_USE_TLS = os.environ.get('EMAIL_USE_TLS', 'True') == 'True'
-EMAIL_HOST_USER = os.environ.get('EMAIL_HOST_USER', '')
-EMAIL_HOST_PASSWORD = os.environ.get('EMAIL_HOST_PASSWORD', '')
-DEFAULT_FROM_EMAIL = os.environ.get('DEFAULT_FROM_EMAIL', 'noreply@yourdomain.com')
+EMAIL_HOST = os.getenv('EMAIL_HOST', 'smtp.gmail.com')
+EMAIL_PORT = int(os.getenv('EMAIL_PORT', 587))
+EMAIL_USE_TLS = os.getenv('EMAIL_USE_TLS', 'True').lower() in ('true', '1', 'yes')
+EMAIL_HOST_USER = os.getenv('EMAIL_HOST_USER', '')
+EMAIL_HOST_PASSWORD = os.getenv('EMAIL_HOST_PASSWORD', '')
+DEFAULT_FROM_EMAIL = os.getenv('DEFAULT_FROM_EMAIL', 'noreply@ornatesolar.com')
 
 # MQTT Configuration
-MQTT_BROKER_HOST = 'localhost'
-MQTT_BROKER_PORT = 1883
+MQTT_BROKER_HOST = os.getenv('MQTT_BROKER_HOST', 'localhost')
+MQTT_BROKER_PORT = int(os.getenv('MQTT_BROKER_PORT', 1883))
 MQTT_TOPICS = {
     'inverter/+/data',  # Subscribe to all inverter data
-   
 }
-MQTT_CLIENT_ID = 'django_inverter_client'
+MQTT_CLIENT_ID = os.getenv('MQTT_CLIENT_ID', 'django_inverter_client')
 MQTT_PORT = MQTT_BROKER_PORT
-MQTT_USERNAME = None  
-MQTT_PASSWORD = None  
+MQTT_USERNAME = os.getenv('MQTT_USERNAME', None)
+MQTT_PASSWORD = os.getenv('MQTT_PASSWORD', None)
 
-# Logging configuration: console + rotating file handlers.
+# Logging configuration: console + rotating file handlers
 LOGGING = {
     'version': 1,
     'disable_existing_loggers': False,
@@ -142,7 +153,7 @@ LOGGING = {
             'style': '{',
         },
         'simple': {
-            'format': '{levelname} {message}',
+            'format': '{levelname} {asctime} {message}',
             'style': '{',
         },
     },
@@ -161,7 +172,7 @@ LOGGING = {
     },
     'root': {
         'handlers': ['console'],
-        'level': 'INFO',
+        'level': 'WARNING' if not DEBUG else 'INFO',
     },
     'loggers': {
         'inverter': {
@@ -184,14 +195,17 @@ LOGGING = {
             'level': 'INFO',
             'propagate': False,
         },
+        'django.security': {
+            'handlers': ['console', 'rotating_file'],
+            'level': 'WARNING',
+            'propagate': False,
+        },
     },
 }
+
 # Create logs directory
 LOGS_DIR = BASE_DIR / 'logs'
 LOGS_DIR.mkdir(exist_ok=True)
-
-# Celery removed - using synchronous processing for cost optimization
-# MQTT messages are now processed directly without background workers
 
 # Templates Configuration
 TEMPLATES = [
@@ -220,32 +234,56 @@ REST_FRAMEWORK = {
     ],
     'DEFAULT_RENDERER_CLASSES': [
         'rest_framework.renderers.JSONRenderer',
-    ]
+    ],
+    'DEFAULT_THROTTLE_CLASSES': [
+        'rest_framework.throttling.AnonRateThrottle',
+        'rest_framework.throttling.UserRateThrottle'
+    ],
+    'DEFAULT_THROTTLE_RATES': {
+        'anon': '100/hour',
+        'user': '1000/hour'
+    }
 }
 
+# JWT Configuration
 SIMPLE_JWT = {
-    'ACCESS_TOKEN_LIFETIME': datetime.timedelta(days=30),
-    'REFRESH_TOKEN_LIFETIME': datetime.timedelta(days=30),
+    'ACCESS_TOKEN_LIFETIME': datetime.timedelta(days=int(os.getenv('JWT_ACCESS_TOKEN_DAYS', 30))),
+    'REFRESH_TOKEN_LIFETIME': datetime.timedelta(days=int(os.getenv('JWT_REFRESH_TOKEN_DAYS', 30))),
+    'ROTATE_REFRESH_TOKENS': True,
+    'BLACKLIST_AFTER_ROTATION': True,
+    'ALGORITHM': 'HS256',
+    'SIGNING_KEY': SECRET_KEY,
+    'AUTH_HEADER_TYPES': ('Bearer',),
 }
 
 WSGI_APPLICATION = "inverter_app_backend.wsgi.application"
 
-# Database Configuration
+# Database Configuration with connection pooling
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.postgresql',
         'NAME': os.getenv('DB_NAME'),
         'USER': os.getenv('DB_USER'),
         'PASSWORD': os.getenv('DB_PASSWORD'),
-        'HOST': os.getenv('DB_HOST'),
-        'PORT': os.getenv('DB_PORT'),
+        'HOST': os.getenv('DB_HOST', 'localhost'),
+        'PORT': os.getenv('DB_PORT', '5432'),
+        'CONN_MAX_AGE': int(os.getenv('DB_CONN_MAX_AGE', 600)),  # Connection pooling
+        'OPTIONS': {
+            'connect_timeout': 10,
+        },
     }
 }
 
+# API Keys - moved to environment variables
+IPSTACK_API_KEY = os.getenv('IPSTACK_API_KEY', '')
+OPENCAGE_API_KEY = os.getenv('OPENCAGE_API_KEY', '')
 
-# Location detection API keys
-IPSTACK_API_KEY = '231d2b6bd9b1ce5e217ee3c504f42cc2'
-OPENCAGE_API_KEY = 'your_opencage_api_key'
+# Validate critical API keys in production
+if not DEBUG:
+    if not IPSTACK_API_KEY:
+        print("WARNING: IPSTACK_API_KEY is not set")
+    if not OPENCAGE_API_KEY:
+        print("WARNING: OPENCAGE_API_KEY is not set")
 
 AUTH_USER_MODEL = 'accounts.User'
 
@@ -256,6 +294,9 @@ AUTH_PASSWORD_VALIDATORS = [
     },
     {
         "NAME": "django.contrib.auth.password_validation.MinimumLengthValidator",
+        "OPTIONS": {
+            "min_length": 8,
+        }
     },
     {
         "NAME": "django.contrib.auth.password_validation.CommonPasswordValidator",
@@ -267,16 +308,33 @@ AUTH_PASSWORD_VALIDATORS = [
 
 # Internationalization
 LANGUAGE_CODE = "en-us"
-TIME_ZONE = "UTC"
+TIME_ZONE = os.getenv('TIME_ZONE', 'UTC')
 USE_I18N = True
 USE_TZ = True
 
-# Static files
+# Static files configuration
 STATIC_URL = "static/"
 STATIC_ROOT = BASE_DIR / 'staticfiles'
+
+# WhiteNoise configuration for serving static files
+if not DEBUG:
+    STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
 
 # Default primary key field type
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 # GeoIP Configuration
-GEOIP_PATH = os.path.join(BASE_DIR, 'geoip', 'GeoLite2-City.mmdb')
+GEOIP_PATH = os.path.join(BASE_DIR, 'geoip')
+
+# Session configuration
+SESSION_COOKIE_HTTPONLY = True
+SESSION_COOKIE_SAMESITE = 'Lax'
+SESSION_COOKIE_AGE = 1209600  # 2 weeks
+
+# CSRF configuration
+CSRF_COOKIE_HTTPONLY = True
+CSRF_COOKIE_SAMESITE = 'Lax'
+CSRF_USE_SESSIONS = False
+
+# Admin URL (can be changed for security)
+ADMIN_URL = os.getenv('ADMIN_URL', 'admin/')

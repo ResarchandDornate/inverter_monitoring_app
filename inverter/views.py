@@ -10,7 +10,8 @@ from django.db.models import Avg, Count, Max, Min, Sum
 from django_filters.rest_framework import DjangoFilterBackend
 from django.utils import timezone
 from datetime import datetime, timedelta
-
+from django.db.models.functions import TruncHour
+from django.db.models.functions import TruncDay
 from .models import Activation, Inverter, InverterData, Manufacturer, PowerGeneration
 from .serializers import (
     ActivationSerializer,
@@ -20,6 +21,7 @@ from .serializers import (
     PowerGenerationSerializer,
 )
 from .mqtt_client import get_last_message_timestamp, mqtt_client
+from django.utils.dateparse import parse_datetime
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
@@ -279,7 +281,6 @@ def get_raw_power_generation_data(queryset):
 
 def get_hourly_power_generation_data(queryset, start_time, end_time):
     """Get hourly aggregated power generation data"""
-    from django.db.models.functions import TruncHour
     
     hourly_data = queryset.annotate(
         hour=TruncHour('measurement_time')
@@ -307,7 +308,6 @@ def get_hourly_power_generation_data(queryset, start_time, end_time):
 
 def get_daily_power_generation_data(queryset, start_time, end_time):
     """Get daily aggregated power generation data"""
-    from django.db.models.functions import TruncDay
     
     daily_data = queryset.annotate(
         day=TruncDay('measurement_time')
@@ -390,7 +390,7 @@ def create_power_generation_data(request):
         # Get measurement time (default to now if not provided)
         measurement_time = data.get('measurement_time')
         if measurement_time:
-            from django.utils.dateparse import parse_datetime
+            
             measurement_time = parse_datetime(measurement_time)
             if not measurement_time:
                 return Response({
