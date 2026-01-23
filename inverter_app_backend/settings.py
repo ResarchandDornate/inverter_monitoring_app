@@ -72,9 +72,13 @@ MIDDLEWARE = [
 ]
 
 # Allowed hosts - configure via environment variable
-ALLOWED_HOSTS = os.getenv('ALLOWED_HOSTS', 'localhost,127.0.0.1').split(',')
-CSRF_TRUSTED_ORIGINS=[
-    'http://13.201.114.43/','http://127.0.0.1/'
+ALLOWED_HOSTS = os.getenv(
+    'ALLOWED_HOSTS',
+    'localhost,127.0.0.1,13.201.114.43'
+).split(',')
+
+CSRF_TRUSTED_ORIGINS = [
+    'http://13.201.114.43',
 ]
 ROOT_URLCONF = "inverter_app_backend.urls"
 
@@ -104,16 +108,16 @@ CORS_ALLOW_HEADERS = [
 
 # Security settings for production
 if not DEBUG:
-    SECURE_SSL_REDIRECT =  False
-    SESSION_COOKIE_SECURE = True
-    CSRF_COOKIE_SECURE = True
-    SECURE_HSTS_SECONDS = 31536000  # 1 year
-    SECURE_HSTS_INCLUDE_SUBDOMAINS = True
-    SECURE_HSTS_PRELOAD = True
+    SECURE_SSL_REDIRECT = False
+
+    SESSION_COOKIE_SECURE = False
+    CSRF_COOKIE_SECURE = False
+
+    SECURE_PROXY_SSL_HEADER = None
+
     SECURE_CONTENT_TYPE_NOSNIFF = True
     SECURE_BROWSER_XSS_FILTER = True
     X_FRAME_OPTIONS = 'DENY'
-    SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
 
 # Email Configuration
 EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'

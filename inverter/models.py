@@ -53,7 +53,7 @@ class Inverter(BaseModel):
     Model to store inverter details, linked to users and manufacturers.
     
     Attributes:
-        user: Owner of the inverter (can be None for system-generated inverters)
+        user: Owner of the inverter 
         manufacturer: Manufacturer of the inverter
         name: Human-readable name for the inverter
         model: Manufacturer model number/identifier
