@@ -73,21 +73,13 @@ MIDDLEWARE = [
 
 # Allowed hosts - configure via environment variable
 ALLOWED_HOSTS = os.getenv('ALLOWED_HOSTS', 'localhost,127.0.0.1').split(',')
-
+CSRF_TRUSTED_ORIGINS=[
+    'http://13.201.114.43/','http://127.0.0.1/'
+]
 ROOT_URLCONF = "inverter_app_backend.urls"
 
 # CORS settings - restrictive by default
-CORS_ALLOW_ALL_ORIGINS = os.getenv('CORS_ALLOW_ALL_ORIGINS', 'False').lower() in ('true', '1', 'yes')
-
-if CORS_ALLOW_ALL_ORIGINS:
-    # Only use in development
-    CORS_ORIGIN_ALLOW_ALL = True
-    CORS_ALLOW_CREDENTIALS = True
-else:
-    # Production: specific origins only
-    CORS_ALLOWED_ORIGINS = os.getenv('CORS_ALLOWED_ORIGINS', '').split(',')
-    CORS_ALLOWED_ORIGINS = [origin.strip() for origin in CORS_ALLOWED_ORIGINS if origin.strip()]
-    CORS_ALLOW_CREDENTIALS = True
+CORS_ALLOW_ALL_ORIGINS = True
 
 CORS_ALLOW_METHODS = [
     'DELETE',
