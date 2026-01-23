@@ -71,13 +71,10 @@ class Inverter(BaseModel):
     """
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL, 
-        on_delete=models.SET_NULL, 
-        null=True, 
-        blank=True,
+        on_delete=models.CASCADE,  # or PROTECT if you don't want to delete inverters
         related_name='user_inverters',
         verbose_name="User",
-        help_text="Owner of the inverter. Can be None for system-generated inverters."
-    )
+)
     manufacturer = models.ForeignKey(
         Manufacturer, 
         on_delete=models.SET_NULL, 
