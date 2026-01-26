@@ -140,321 +140,255 @@ class InverterDataViewSet(viewsets.ModelViewSet):
             .filter(inverter__user=self.request.user)
         )
 
-class PowerGenerationViewSet(viewsets.ModelViewSet):
+# class PowerGenerationViewSet(viewsets.ModelViewSet):
+#     serializer_class = PowerGenerationSerializer
+#     permission_classes = [permissions.IsAuthenticated]
+#     filter_backends = [DjangoFilterBackend, OrderingFilter]
+#     filterset_fields = ['inverter']
+#     ordering_fields = ['measurement_time']
+
+#     def get_queryset(self):
+#         return (
+#             PowerGeneration.objects.select_related("inverter")
+#             .filter(inverter__user=self.request.user)
+#         )
+    
+#     @action(detail=False, methods=['get'])
+#     def recent(self, request):
+#         """Get recent power generation data"""
+#         hours = int(request.query_params.get('hours', 24))
+#         since = timezone.now() - timedelta(hours=hours)
+        
+#         queryset = self.get_queryset().filter(measurement_time__gte=since)
+        
+#         # Get summary
+#         summary = self._summary(queryset)
+        
+#         # Get recent records
+#         recent_records = queryset[:10]
+#         serializer = self.get_serializer(recent_records, many=True)
+        
+#         return Response({
+#             'summary': summary,
+#             'recent_records': serializer.data,
+#             'total_records': queryset.count()
+#         })
+    
+#     @action(detail=False, methods=['get'])
+#     def stats(self, request):
+#         """Get PowerGeneration statistics"""
+#         queryset = self.get_queryset()
+        
+#         # Overall stats
+#         total_records = queryset.count()
+        
+#         # Recent stats (last 24 hours)
+#         recent_queryset = queryset.filter(
+#             measurement_time__gte=timezone.now() - timedelta(hours=24)
+#         )
+#         recent_count = recent_queryset.count()
+        
+#         # Latest record
+#         latest_record = queryset.first()
+        
+#         return Response({
+#             'total_records': total_records,
+#             'recent_24h_records': recent_count,
+#             'latest_record': {
+#                 'id': latest_record.id if latest_record else None,
+#                 'measurement_time': latest_record.measurement_time if latest_record else None,
+#                 'energy_generated': latest_record.energy_generated if latest_record else None,
+#                 'inverter_name': latest_record.inverter.name if latest_record else None,
+#             } if latest_record else None,
+#             'inverter_count': queryset.values('inverter').distinct().count()
+#         })
+        
+        
+class PowerGenerationViewSet(viewsets.ReadOnlyModelViewSet):
+    """
+    Secure Power Generation APIs
+    """
     serializer_class = PowerGenerationSerializer
     permission_classes = [permissions.IsAuthenticated]
-    filter_backends = [DjangoFilterBackend, OrderingFilter]
-    filterset_fields = ['inverter']
-    ordering_fields = ['measurement_time']
 
     def get_queryset(self):
-        return (
-            PowerGeneration.objects.select_related("inverter")
-            .filter(inverter__user=self.request.user)
+        return PowerGeneration.objects.filter(
+            inverter__user=self.request.user
+        ).select_related("inverter", "inverter__manufacturer")
+
+    # ---------------- CREATE POWER DATA ----------------
+    @action(detail=False, methods=['post'], url_path='create')
+    def create_power(self, request):
+        data = request.data
+
+        required_fields = ["inverter_serial", "energy_generated"]
+        for field in required_fields:
+            if field not in data:
+                return Response(
+                    {"error": f"Missing field: {field}"},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+        try:
+            inverter = Inverter.objects.get(
+                serial_number=data["inverter_serial"],
+                user=request.user
+            )
+        except Inverter.DoesNotExist:
+            return Response(
+                {"error": "Inverter not found or access denied"},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+        measurement_time = data.get("measurement_time")
+        measurement_time = (
+            parse_datetime(measurement_time)
+            if measurement_time else timezone.now()
         )
-    
-    @action(detail=False, methods=['get'])
-    def recent(self, request):
-        """Get recent power generation data"""
-        hours = int(request.query_params.get('hours', 24))
-        since = timezone.now() - timedelta(hours=hours)
-        
-        queryset = self.get_queryset().filter(measurement_time__gte=since)
-        
-        # Get summary
-        summary = calculate_power_generation_summary(queryset)
-        
-        # Get recent records
-        recent_records = queryset[:10]
-        serializer = self.get_serializer(recent_records, many=True)
-        
-        return Response({
-            'summary': summary,
-            'recent_records': serializer.data,
-            'total_records': queryset.count()
-        })
-    
-    @action(detail=False, methods=['get'])
-    def stats(self, request):
-        """Get PowerGeneration statistics"""
-        queryset = self.get_queryset()
-        
-        # Overall stats
-        total_records = queryset.count()
-        
-        # Recent stats (last 24 hours)
-        recent_queryset = queryset.filter(
-            measurement_time__gte=timezone.now() - timedelta(hours=24)
+
+        if measurement_time is None:
+            return Response(
+                {"error": "Invalid datetime format"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        power = PowerGeneration.objects.create(
+            inverter=inverter,
+            energy_generated=data["energy_generated"],
+            measurement_time=measurement_time
         )
-        recent_count = recent_queryset.count()
-        
-        # Latest record
-        latest_record = queryset.first()
-        
-        return Response({
-            'total_records': total_records,
-            'recent_24h_records': recent_count,
-            'latest_record': {
-                'id': latest_record.id if latest_record else None,
-                'measurement_time': latest_record.measurement_time if latest_record else None,
-                'energy_generated': latest_record.energy_generated if latest_record else None,
-                'inverter_name': latest_record.inverter.name if latest_record else None,
-            } if latest_record else None,
-            'inverter_count': queryset.values('inverter').distinct().count()
-        })
-        
-        
-@api_view(['GET'])
-def power_generation_api(request):
-    """
-    API endpoint for power generation data
-    Query parameters:
-    - hours: Number of hours to look back (default: 24)
-    - inverter_id: Specific inverter serial number (optional)
-    - aggregation: 'hourly', 'daily', or 'raw' (default: 'hourly')
-    """
-    try:
-        # Get query parameters
-        hours = int(request.GET.get('hours', 24))
-        inverter_id = request.GET.get('inverter_id')
-        aggregation = request.GET.get('aggregation', 'hourly')
-        
-        # Calculate time range
+
+        return Response(
+            {
+                "status": "success",
+                "id": power.id,
+                "measurement_time": power.measurement_time,
+                "energy_generated": float(power.energy_generated),
+            },
+            status=status.HTTP_201_CREATED
+        )
+
+    # ---------------- ANALYTICS ----------------
+    @action(detail=False, methods=['get'], url_path='analytics')
+    def analytics(self, request):
+        hours = int(request.query_params.get("hours", 24))
+        inverter_id = request.query_params.get("inverter_id")
+        aggregation = request.query_params.get("aggregation", "hourly")
+
         end_time = timezone.now()
         start_time = end_time - timedelta(hours=hours)
-        
-        # Base queryset using PowerGeneration model
-        queryset = PowerGeneration.objects.filter(
+
+        queryset = self.get_queryset().filter(
             measurement_time__gte=start_time,
             measurement_time__lte=end_time
         )
-        
-        # Filter by specific inverter if requested
+
         if inverter_id:
             queryset = queryset.filter(inverter__serial_number=inverter_id)
-        
-        # Get aggregated data based on request
-        if aggregation == 'raw':
-            data = get_raw_power_generation_data(queryset)
-        elif aggregation == 'daily':
-            data = get_daily_power_generation_data(queryset, start_time, end_time)
-        else:  # hourly (default)
-            data = get_hourly_power_generation_data(queryset, start_time, end_time)
-        
-        # Calculate summary statistics
-        summary = calculate_power_generation_summary(queryset)
-        
-        return Response({
-            'status': 'success',
-            'data': data,
-            'summary': summary,
-            'parameters': {
-                'hours': hours,
-                'inverter_id': inverter_id,
-                'aggregation': aggregation,
-                'start_time': start_time.isoformat(),
-                'end_time': end_time.isoformat()
-            }
-        }, status=status.HTTP_200_OK)
-        
-    except Exception as e:
-        return Response({
-            'status': 'error',
-            'message': str(e)
-        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-def get_raw_power_generation_data(queryset):
-    """Get raw power generation data"""
-    data = []
-    for record in queryset.select_related('inverter'):
-        data.append({
-            'measurement_time': record.measurement_time.isoformat(),
-            'inverter_id': record.inverter.serial_number,
-            'inverter_name': record.inverter.name,
-            'energy_generated': float(record.energy_generated),
-            'inverter_capacity': record.inverter.inverter_capacity,
-            'efficiency_factor': record.inverter.efficiency_factor,
-            'location': f"{record.inverter.city}, {record.inverter.state}",
-            'manufacturer': record.inverter.manufacturer.company_name if record.inverter.manufacturer else 'Unknown'
-        })
-    return data
-
-def get_hourly_power_generation_data(queryset, start_time, end_time):
-    """Get hourly aggregated power generation data"""
-    
-    hourly_data = queryset.annotate(
-        hour=TruncHour('measurement_time')
-    ).values('hour', 'inverter__serial_number', 'inverter__name').annotate(
-        total_energy=Sum('energy_generated'),
-        avg_energy=Avg('energy_generated'),
-        max_energy=Max('energy_generated'),
-        min_energy=Min('energy_generated'),
-        count_records=Count('id')
-    ).order_by('hour', 'inverter__serial_number')
-    
-    data = []
-    for record in hourly_data:
-        data.append({
-            'hour': record['hour'].isoformat(),
-            'inverter_id': record['inverter__serial_number'],
-            'inverter_name': record['inverter__name'],
-            'total_energy_kwh': float(record['total_energy']) if record['total_energy'] else 0,
-            'avg_energy_kwh': float(record['avg_energy']) if record['avg_energy'] else 0,
-            'max_energy_kwh': float(record['max_energy']) if record['max_energy'] else 0,
-            'min_energy_kwh': float(record['min_energy']) if record['min_energy'] else 0,
-            'data_points': record['count_records']
-        })
-    return data
-
-def get_daily_power_generation_data(queryset, start_time, end_time):
-    """Get daily aggregated power generation data"""
-    
-    daily_data = queryset.annotate(
-        day=TruncDay('measurement_time')
-    ).values('day', 'inverter__serial_number', 'inverter__name').annotate(
-        total_energy=Sum('energy_generated'),
-        avg_energy=Avg('energy_generated'),
-        max_energy=Max('energy_generated'),
-        min_energy=Min('energy_generated'),
-        count_records=Count('id')
-    ).order_by('day', 'inverter__serial_number')
-    
-    data = []
-    for record in daily_data:
-        data.append({
-            'date': record['day'].date().isoformat(),
-            'inverter_id': record['inverter__serial_number'],
-            'inverter_name': record['inverter__name'],
-            'total_energy_kwh': float(record['total_energy']) if record['total_energy'] else 0,
-            'avg_energy_kwh': float(record['avg_energy']) if record['avg_energy'] else 0,
-            'max_energy_kwh': float(record['max_energy']) if record['max_energy'] else 0,
-            'min_energy_kwh': float(record['min_energy']) if record['min_energy'] else 0,
-            'data_points': record['count_records']
-        })
-    return data
-
-def calculate_power_generation_summary(queryset):
-    """Calculate summary statistics for power generation"""
-    summary = queryset.aggregate(
-        total_records=Count('id'),
-        total_energy=Sum('energy_generated'),
-        avg_energy=Avg('energy_generated'),
-        max_energy=Max('energy_generated'),
-        min_energy=Min('energy_generated')
-    )
-    
-    # Get inverter count
-    inverter_count = queryset.values('inverter').distinct().count()
-    
-    # Get time range
-    time_range = queryset.aggregate(
-        earliest=Min('measurement_time'),
-        latest=Max('measurement_time')
-    )
-    
-    return {
-        'total_records': summary['total_records'] or 0,
-        'inverter_count': inverter_count,
-        'total_energy_kwh': float(summary['total_energy']) if summary['total_energy'] else 0,
-        'avg_energy_kwh': float(summary['avg_energy']) if summary['avg_energy'] else 0,
-        'max_energy_kwh': float(summary['max_energy']) if summary['max_energy'] else 0,
-        'min_energy_kwh': float(summary['min_energy']) if summary['min_energy'] else 0,
-        'earliest_measurement': time_range['earliest'].isoformat() if time_range['earliest'] else None,
-        'latest_measurement': time_range['latest'].isoformat() if time_range['latest'] else None
-    }
-
-# Additional API endpoint to create power generation data
-@api_view(['POST'])
-def create_power_generation_data(request):
-    """
-    API endpoint to create new power generation data
-    Expected JSON payload:
-    {
-        "inverter_serial": "TEST123",
-        "energy_generated": 25.5,
-        "measurement_time": "2024-01-15T10:30:00Z"  # Optional, defaults to now
-    }
-    """
-    try:
-        data = request.data
-        
-        # Get inverter by serial number
-        try:
-            inverter = Inverter.objects.get(serial_number=data['inverter_serial'])
-        except Inverter.DoesNotExist:
-            return Response({
-                'status': 'error',
-                'message': f"Inverter with serial number '{data['inverter_serial']}' not found"
-            }, status=status.HTTP_404_NOT_FOUND)
-        
-        # Get measurement time (default to now if not provided)
-        measurement_time = data.get('measurement_time')
-        if measurement_time:
-            
-            measurement_time = parse_datetime(measurement_time)
-            if not measurement_time:
-                return Response({
-                    'status': 'error',
-                    'message': 'Invalid measurement_time format. Use ISO format: YYYY-MM-DDTHH:MM:SSZ'
-                }, status=status.HTTP_400_BAD_REQUEST)
+        if aggregation == "raw":
+            data = self._raw_data(queryset)
+        elif aggregation == "daily":
+            data = self._daily_data(queryset)
         else:
-            measurement_time = timezone.now()
-        
-        # Create power generation record
-        power_gen = PowerGeneration.objects.create(
-            inverter=inverter,
-            energy_generated=data['energy_generated'],
-            measurement_time=measurement_time
-        )
-        
-        return Response({
-            'status': 'success',
-            'message': 'Power generation data created successfully',
-            'data': {
-                'id': power_gen.id,
-                'inverter_serial': inverter.serial_number,
-                'inverter_name': inverter.name,
-                'energy_generated': float(power_gen.energy_generated),
-                'measurement_time': power_gen.measurement_time.isoformat()
-            }
-        }, status=status.HTTP_201_CREATED)
-        
-    except KeyError as e:
-        return Response({
-            'status': 'error',
-            'message': f'Missing required field: {str(e)}'
-        }, status=status.HTTP_400_BAD_REQUEST)
-    except Exception as e:
-        return Response({
-            'status': 'error',
-            'message': str(e)
-        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            data = self._hourly_data(queryset)
 
-
-@api_view(["GET"])
-def mqtt_health(request):
-    """Simple health endpoint for MQTT connectivity."""
-    last_ts = get_last_message_timestamp()
-    is_connected = bool(mqtt_client and mqtt_client.is_connected())
-    return Response(
-        {
-            "mqtt_connected": is_connected,
-            "last_message_timestamp": last_ts,
-        },
-        status=status.HTTP_200_OK,
-    )
-
-
-@api_view(["GET"])
-def db_health(request):
-    """Simple health endpoint for database connectivity."""
-    try:
-        with connection.cursor() as cursor:
-            cursor.execute("SELECT 1;")
-            cursor.fetchone()
-        return Response({"database_ok": True}, status=status.HTTP_200_OK)
-    except Exception as exc:  # pragma: no cover - defensive
         return Response(
-            {"database_ok": False, "error": str(exc)},
-            status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            {
+                "status": "success",
+                "data": data,
+                "summary": self._summary(queryset),
+            }
         )
+
+    # ---------------- HELPERS ----------------
+    def _raw_data(self, queryset):
+        return [
+            {
+                "time": r.measurement_time,
+                "inverter": r.inverter.serial_number,
+                "energy": float(r.energy_generated),
+            }
+            for r in queryset
+        ]
+
+    def _hourly_data(self, queryset):
+        return list(
+            queryset.annotate(hour=TruncHour("measurement_time"))
+            .values("hour", "inverter__serial_number")
+            .annotate(total=Sum("energy_generated"))
+            .order_by("hour")
+        )
+
+    def _daily_data(self, queryset):
+        return list(
+            queryset.annotate(day=TruncDay("measurement_time"))
+            .values("day", "inverter__serial_number")
+            .annotate(total=Sum("energy_generated"))
+            .order_by("day")
+        )
+
+    def _summary(self, queryset):
+        agg = queryset.aggregate(
+            total=Sum("energy_generated"),
+            avg=Avg("energy_generated"),
+            max=Max("energy_generated"),
+            min=Min("energy_generated"),
+            count=Count("id")
+        )
+        return {
+            "records": agg["count"],
+            "total_energy": float(agg["total"] or 0),
+            "average_energy": float(agg["avg"] or 0),
+            "max_energy": float(agg["max"] or 0),
+            "min_energy": float(agg["min"] or 0),
+        }
+
+
+class MQTTViewSet(viewsets.ViewSet):
+    permission_classes = [permissions.IsAuthenticated]
+
+    @action(detail=False, methods=['post'])
+    def publish(self, request):
+        topic = request.data.get("topic")
+        message = request.data.get("message")
+
+        if not topic or not message:
+            return Response(
+                {"error": "topic and message required"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        if not mqtt_client or not mqtt_client.is_connected():
+            return Response(
+                {"error": "MQTT not connected"},
+                status=status.HTTP_503_SERVICE_UNAVAILABLE
+            )
+
+        mqtt_client.publish(topic, message)
+        return Response({"status": "published"})
+
+    @action(detail=False, methods=['get'])
+    def health(self, request):
+        return Response(
+            {
+                "connected": bool(mqtt_client and mqtt_client.is_connected()),
+                "last_message": get_last_message_timestamp(),
+            }
+        )
+
+
+class HealthViewSet(viewsets.ViewSet):
+    permission_classes = [permissions.IsAuthenticated]
+
+    @action(detail=False, methods=['get'])
+    def db(self, request):
+        try:
+            with connection.cursor() as cursor:
+                cursor.execute("SELECT 1")
+            return Response({"database": "ok"})
+        except Exception as exc:
+            return Response(
+                {"database": "error", "details": str(exc)},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )   
