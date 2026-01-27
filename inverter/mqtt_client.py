@@ -181,21 +181,21 @@ def _get_or_create_inverter(inverter_id: str) -> Inverter:
         User = get_user_model()
 
         system_user, _ = User.objects.get_or_create(
-            email="mqtt-system@ornatesolar.com",
+            email="krishna@ornatesolar.in",
             defaults={
                 "is_active": True,
                 "is_verified": True,
                 "role": User.ADMIN,
-                "department": "System",
-                "contact_number": "0000000000",
+                "department": "Resarch and Development",
+                "contact_number": "9550434470",
             },
         )
 
         manufacturer, _ = Manufacturer.objects.get_or_create(
-            company_name="ESP32",
+            company_name="ORNATE SOLAR",
             defaults={
-                "country": "Unknown",
-                "website": "https://espressif.com",
+                "country": "INDIA",
+                "website": "https://ornatesolar.com/",
             },
         )
 
