@@ -52,24 +52,32 @@ def extract_inverter_id(topic: str, payload: Dict[str, Any]) -> Optional[str]:
 
 
 def validate_inverter_message(data: Dict[str, Any]) -> Dict[str, Any]:
-    """Validate raw MQTT payload and return a cleaned dict.
-
-    This function is intentionally lightweight and defensive. It ensures
-    all expected numeric fields exist and are convertible to floats.
-    """
-    expected_numeric_fields = ["VG", "IG", "VPV", "IPV", "TEMP1", "TEMP2"]
     cleaned: Dict[str, Any] = {}
 
-    for field in expected_numeric_fields:
-        raw_value = data.get(field, 0)
+    # Core electrical fields
+    for field in ["VG", "IG", "VPV", "IPV"]:
+        raw = data.get(field, 0)
         try:
-            cleaned[field] = float(raw_value)
+            cleaned[field] = float(raw)
         except (TypeError, ValueError):
-            logger.warning("Invalid value for %s: %r. Defaulting to 0.", field, raw_value)
             cleaned[field] = 0.0
 
-    cleaned["timestamp"] = data.get("timestamp") or None
+    # 🌡 Temperature (ESP sends only `temp`)
+    raw_temp = data.get("temp", 0)
+    try:
+        temp = float(raw_temp)
+    except (TypeError, ValueError):
+        temp = 0.0
+
+    # Map single temp → TEMP1 & TEMP2
+    cleaned["TEMP1"] = temp
+    cleaned["TEMP2"] = temp
+
+    # Timestamp (string or null)
+    cleaned["timestamp"] = data.get("timestamp")
+
     return cleaned
+
 
 
 def normalize_inverter_data(
