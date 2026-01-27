@@ -122,7 +122,7 @@ def build_inverter_data_kwargs(
     """Prepare keyword arguments for creating an InverterData instance."""
     return {
         "inverter": inverter_obj,
-        "manufacturer": getattr(inverter_obj, "manufacturer", None),
+        # "manufacturer": getattr(inverter_obj, "manufacturer", None),
         "voltage": normalized.voltage,
         "current": normalized.current,
         "power": normalized.power,
