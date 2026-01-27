@@ -133,12 +133,30 @@ class InverterDataViewSet(viewsets.ModelViewSet):
     filter_backends = [DjangoFilterBackend, OrderingFilter]
     filterset_fields = ['inverter', 'grid_connected']
     ordering_fields = ['timestamp']
+    ordering = ['-timestamp']  # default latest first
 
     def get_queryset(self):
-        return (
-            InverterData.objects.select_related("inverter", "manufacturer")
+        qs = (
+            InverterData.objects
+            .select_related("inverter__manufacturer")
             .filter(inverter__user=self.request.user)
         )
+
+        # --- Time filters ---
+        start = self.request.query_params.get("start")
+        end = self.request.query_params.get("end")
+
+        if start:
+            start_dt = parse_datetime(start)
+            if start_dt:
+                qs = qs.filter(timestamp__gte=start_dt)
+
+        if end:
+            end_dt = parse_datetime(end)
+            if end_dt:
+                qs = qs.filter(timestamp__lte=end_dt)
+
+        return qs
 
 # class PowerGenerationViewSet(viewsets.ModelViewSet):
 #     serializer_class = PowerGenerationSerializer
