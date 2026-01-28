@@ -51,70 +51,110 @@ def extract_inverter_id(topic: str, payload: Dict[str, Any]) -> Optional[str]:
     return None
 
 
+from typing import Dict, Any
+
+
 def validate_inverter_message(data: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Validate and normalize raw MQTT payload from ESP32.
+
+    Ensures:
+    - Numeric coercion
+    - Case-insensitive power handling
+    - Stable internal field names
+    """
+
     cleaned: Dict[str, Any] = {}
 
+    # ---- Electrical values ----
     for field in ["VG", "IG", "VPV", "IPV"]:
+        raw = data.get(field, 0)
         try:
-            cleaned[field] = float(data.get(field, 0))
+            cleaned[field] = float(raw)
         except (TypeError, ValueError):
             cleaned[field] = 0.0
 
-    # ✅ FIX: read power correctly
-    raw_power = data.get("POWER", data.get("Power", 0))
+    # ---- POWER (ESP sends `power`) ----
+    raw_power = (
+        data.get("POWER")
+        or data.get("Power")
+        or data.get("power")
+        or 0
+    )
+
     try:
         cleaned["POWER"] = float(raw_power)
     except (TypeError, ValueError):
         cleaned["POWER"] = 0.0
 
-    temp = float(data.get("temp", 0) or 0)
+    # ---- Temperature ----
+    try:
+        temp = float(data.get("temp", 0))
+    except (TypeError, ValueError):
+        temp = 0.0
+
     cleaned["TEMP1"] = temp
     cleaned["TEMP2"] = temp
 
+    # ---- Timestamp (optional, backend time used anyway) ----
     cleaned["timestamp"] = data.get("timestamp")
+
     return cleaned
 
 
+
 def normalize_inverter_data(
-    inverter_id: str, cleaned: Dict[str, Any]
-) -> NormalizedInverterData:
+    inverter_id: str,
+    cleaned: Dict[str, Any],
+):
+    """
+    Convert validated payload into a normalized inverter data object.
 
-    # --- GRID (AC) ---
-    vg = cleaned.get("VG", 0.0)     # ≈ 230V
-    ig = cleaned.get("IG", 0.0)     # ≈ 12A
+    RULES:
+    - voltage/current = GRID (VG / IG)
+    - power = ESP POWER if provided
+    - fallback power = VG × IG
+    """
 
-    # --- PV (DC) ---
-    vpv = cleaned.get("VPV", 0.0)   # ≈ 360–380V
+    # ---- GRID (AC) ----
+    vg = cleaned.get("VG", 0.0)   # ~230V
+    ig = cleaned.get("IG", 0.0)   # ~12A
+
+    # ---- PV (DC) (used only for diagnostics, not persistence) ----
+    vpv = cleaned.get("VPV", 0.0)
     ipv = cleaned.get("IPV", 0.0)
 
+    # ---- Device power ----
     incoming_power = cleaned.get("POWER", 0.0)
 
-    # ✅ ALWAYS store GRID voltage/current
-    voltage = vg
-    current = ig
-
-    # ✅ TRUST DEVICE POWER
+    # ---- Decide final power ----
     if incoming_power > 0:
         power = incoming_power
     else:
-        power = vg * ig   # fallback only
+        power = vg * ig  # safe fallback only
 
+    # ---- Temperature ----
     temperature = (cleaned["TEMP1"] + cleaned["TEMP2"]) / 2.0
 
-    logger.error(
-        "SAVE CHECK → VG=%s IG=%s VPV=%s IPV=%s POWER_IN=%s SAVED_POWER=%s",
+    # ---- DEBUG LOG (keep for now, remove later) ----
+    import logging
+    logger = logging.getLogger(__name__)
+    logger.warning(
+        "NORMALIZED SAVE | VG=%.2f IG=%.2f VPV=%.2f IPV=%.2f "
+        "POWER_IN=%.2f SAVED_POWER=%.2f",
         vg, ig, vpv, ipv, incoming_power, power
     )
 
-    return NormalizedInverterData(
-        inverter_id=inverter_id,
-        voltage=Decimal(f"{voltage:.2f}"),
-        current=Decimal(f"{current:.2f}"),
-        power=Decimal(f"{power:.2f}"),
-        temperature=temperature,
-        grid_connected=vg > 200,
-        timestamp=timezone.now(),
-    )
+    # ---- Return normalized object ----
+    return {
+        "inverter_id": inverter_id,
+        "voltage": Decimal(f"{vg:.2f}"),
+        "current": Decimal(f"{ig:.2f}"),
+        "power": Decimal(f"{power:.2f}"),
+        "temperature": temperature,
+        "grid_connected": vg > 200,
+        "timestamp": timezone.now(),
+    }
 
 
 def should_save_message(_: Dict[str, Any]) -> bool:
