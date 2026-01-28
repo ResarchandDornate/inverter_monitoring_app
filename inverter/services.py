@@ -79,31 +79,44 @@ def normalize_inverter_data(
     inverter_id: str, cleaned: Dict[str, Any]
 ) -> NormalizedInverterData:
 
-    vg = cleaned.get("VG", 0.0)
-    ig = cleaned.get("IG", 0.0)
-    vpv = cleaned.get("VPV", 0.0)
+    # --- GRID (AC) ---
+    vg = cleaned.get("VG", 0.0)     # ≈ 230V
+    ig = cleaned.get("IG", 0.0)     # ≈ 12A
+
+    # --- PV (DC) ---
+    vpv = cleaned.get("VPV", 0.0)   # ≈ 360–380V
     ipv = cleaned.get("IPV", 0.0)
+
     incoming_power = cleaned.get("POWER", 0.0)
 
-    temp1 = cleaned.get("TEMP1", 0.0)
-    temp2 = cleaned.get("TEMP2", 0.0)
+    # ✅ ALWAYS store GRID voltage/current
+    voltage = vg
+    current = ig
 
-    # ✅ TRUST DEVICE POWER FIRST
+    # ✅ TRUST DEVICE POWER
     if incoming_power > 0:
         power = incoming_power
     else:
-        # fallback only if power not sent
-        power = vg * ig
+        power = vg * ig   # fallback only
+
+    temperature = (cleaned["TEMP1"] + cleaned["TEMP2"]) / 2.0
+
+    logger.error(
+        "SAVE CHECK → VG=%s IG=%s VPV=%s IPV=%s POWER_IN=%s SAVED_POWER=%s",
+        vg, ig, vpv, ipv, incoming_power, power
+    )
 
     return NormalizedInverterData(
         inverter_id=inverter_id,
-        voltage=Decimal(f"{vg:.2f}"),
-        current=Decimal(f"{ig:.2f}"),
+        voltage=Decimal(f"{voltage:.2f}"),
+        current=Decimal(f"{current:.2f}"),
         power=Decimal(f"{power:.2f}"),
-        temperature=(temp1 + temp2) / 2.0,
+        temperature=temperature,
         grid_connected=vg > 200,
         timestamp=timezone.now(),
     )
+
+
 def should_save_message(_: Dict[str, Any]) -> bool:
     """Determine whether this message should be persisted.
 
