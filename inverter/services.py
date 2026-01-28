@@ -104,6 +104,14 @@ def normalize_inverter_data(
         grid_connected=vg > 200,
         timestamp=timezone.now(),
     )
+def should_save_message(_: Dict[str, Any]) -> bool:
+    """Determine whether this message should be persisted.
+
+    Hook for adding filtering, deduplication or rate limiting in future.
+    Currently always returns True.
+    """
+    return True
+
 
 def build_inverter_data_kwargs(
     normalized: NormalizedInverterData, inverter_obj
