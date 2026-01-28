@@ -103,58 +103,53 @@ def validate_inverter_message(data: Dict[str, Any]) -> Dict[str, Any]:
 
 
 
+
 def normalize_inverter_data(
     inverter_id: str,
-    cleaned: Dict[str, Any],
-):
+    cleaned: dict,
+) -> NormalizedInverterData:
     """
-    Convert validated payload into a normalized inverter data object.
+    Normalize validated inverter telemetry.
 
     RULES:
     - voltage/current = GRID (VG / IG)
-    - power = ESP POWER if provided
+    - power = ESP POWER if present
     - fallback power = VG × IG
     """
 
     # ---- GRID (AC) ----
     vg = cleaned.get("VG", 0.0)   # ~230V
-    ig = cleaned.get("IG", 0.0)   # ~12A
+    ig = cleaned.get("IG", 0.0)   # ~12–13A
 
-    # ---- PV (DC) (used only for diagnostics, not persistence) ----
+    # ---- PV (DC) ----
     vpv = cleaned.get("VPV", 0.0)
     ipv = cleaned.get("IPV", 0.0)
 
-    # ---- Device power ----
+    # ---- POWER ----
     incoming_power = cleaned.get("POWER", 0.0)
 
-    # ---- Decide final power ----
     if incoming_power > 0:
         power = incoming_power
     else:
-        power = vg * ig  # safe fallback only
+        power = vg * ig
 
-    # ---- Temperature ----
     temperature = (cleaned["TEMP1"] + cleaned["TEMP2"]) / 2.0
 
-    # ---- DEBUG LOG (keep for now, remove later) ----
-    import logging
-    logger = logging.getLogger(__name__)
     logger.warning(
         "NORMALIZED SAVE | VG=%.2f IG=%.2f VPV=%.2f IPV=%.2f "
-        "POWER_IN=%.2f SAVED_POWER=%.2f",
+        "POWER_IN=%.2f FINAL_POWER=%.2f",
         vg, ig, vpv, ipv, incoming_power, power
     )
 
-    # ---- Return normalized object ----
-    return {
-        "inverter_id": inverter_id,
-        "voltage": Decimal(f"{vg:.2f}"),
-        "current": Decimal(f"{ig:.2f}"),
-        "power": Decimal(f"{power:.2f}"),
-        "temperature": temperature,
-        "grid_connected": vg > 200,
-        "timestamp": timezone.now(),
-    }
+    return NormalizedInverterData(
+        inverter_id=inverter_id,
+        voltage=Decimal(f"{vg:.2f}"),
+        current=Decimal(f"{ig:.2f}"),
+        power=Decimal(f"{power:.2f}"),
+        temperature=temperature,
+        grid_connected=vg > 200,
+        timestamp=timezone.now(),
+    )
 
 
 def should_save_message(_: Dict[str, Any]) -> bool:
