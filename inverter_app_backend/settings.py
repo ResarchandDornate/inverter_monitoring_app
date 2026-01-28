@@ -306,10 +306,15 @@ AUTH_PASSWORD_VALIDATORS = [
 ]
 
 # Internationalization
-LANGUAGE_CODE = "en-us"
-TIME_ZONE = os.getenv('TIME_ZONE', 'UTC')
-USE_I18N = True
+# ✅ Language (for translations)
+LANGUAGE_CODE = "en-in"   # or "en-in"
+
+
+TIME_ZONE = "Asia/Kolkata"
 USE_TZ = True
+
+USE_I18N = True
+
 
 # Static files configuration
 STATIC_URL = "static/"
