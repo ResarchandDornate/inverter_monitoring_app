@@ -9,6 +9,8 @@ from django.utils import timezone
 from django.core.validators import MinValueValidator
 import logging
 
+logger = logging.getLogger(__name__)
+
 class Manufacturer(BaseModel):
     """
     Model to store manufacturer details for inverters.
