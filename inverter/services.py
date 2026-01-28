@@ -94,8 +94,8 @@ def normalize_inverter_data(
     grid_power = vg * ig
     pv_power = vpv * ipv
 
-    main_voltage = max(vg, vpv)
-    main_current = max(ig, ipv)
+    main_voltage = vg
+    main_current = ig
     main_power = max(grid_power, pv_power)
     avg_temperature = (temp1 + temp2) / 2.0
 
