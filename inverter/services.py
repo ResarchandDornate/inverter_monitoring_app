@@ -94,9 +94,9 @@ def normalize_inverter_data(
     # grid_power = vg * ig
     pv_power = vpv * ipv
 
-    main_voltage = vg
-    main_current = ig
-    main_power = main_power
+    main_voltage = vpv
+    main_current = ipv
+    main_power = 0
     avg_temperature = (temp1 + temp2) / 2.0
 
     # We intentionally do not rely on the ESP32 monotonic timestamp for
