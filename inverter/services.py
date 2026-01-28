@@ -83,36 +83,44 @@ def validate_inverter_message(data: Dict[str, Any]) -> Dict[str, Any]:
 def normalize_inverter_data(
     inverter_id: str, cleaned: Dict[str, Any]
 ) -> NormalizedInverterData:
-    """Derive voltage, current, power, temperature and flags from cleaned data."""
-    vg = float(cleaned.get("VG", 0.0))
-    ig = float(cleaned.get("IG", 0.0))
-    vpv = float(cleaned.get("VPV", 0.0))
-    ipv = float(cleaned.get("IPV", 0.0))
-    temp1 = float(cleaned.get("TEMP1", 0.0))
-    temp2 = float(cleaned.get("TEMP2", 0.0))
+    """Derive voltage, current, temperature and flags from cleaned data."""
 
-    # grid_power = vg * ig
-    pv_power = vpv * ipv
+    vg = Decimal(str(cleaned.get("VG", 0.0)))
+    ig = Decimal(str(cleaned.get("IG", 0.0)))
+    vpv = Decimal(str(cleaned.get("VPV", 0.0)))
+    ipv = Decimal(str(cleaned.get("IPV", 0.0)))
 
-    main_voltage = vpv
-    main_current = ipv
-    main_power = 0
-    avg_temperature = (temp1 + temp2) / 2.0
+    temp1 = cleaned.get("TEMP1", 0.0)
+    temp2 = cleaned.get("TEMP2", 0.0)
 
-    # We intentionally do not rely on the ESP32 monotonic timestamp for
-    # persistence, because we do not know the boot time. Using server
-    # time keeps ordering consistent.
+    # ---- temperature (safe average) ----
+    temps = [t for t in (temp1, temp2) if isinstance(t, (int, float)) and t > 0]
+    avg_temperature = sum(temps) / len(temps) if temps else 0.0
+
+    # ---- grid detection ----
+    grid_connected = vg > 200 and ig > 0
+
+    # ---- choose ONE electrical domain ----
+    if grid_connected:
+        voltage = vg
+        current = ig
+    else:
+        voltage = vpv
+        current = ipv
+
+    # ---- server-side timestamp ----
     record_timestamp = timezone.now()
 
     return NormalizedInverterData(
         inverter_id=inverter_id,
-        voltage=Decimal(str(round(main_voltage, 2))),
-        current=Decimal(str(round(main_current, 2))),
-        power=Decimal(str(round(main_power, 2))),
+        voltage=voltage.quantize(Decimal("0.01")),
+        current=current.quantize(Decimal("0.01")),
+        power=Decimal("0.00"),  # will be recalculated in model.save()
         temperature=avg_temperature,
-        grid_connected=vg > 200,
+        grid_connected=grid_connected,
         timestamp=record_timestamp,
     )
+
 
 
 def should_save_message(_: Dict[str, Any]) -> bool:
