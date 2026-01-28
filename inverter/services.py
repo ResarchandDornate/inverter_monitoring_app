@@ -54,24 +54,24 @@ def extract_inverter_id(topic: str, payload: Dict[str, Any]) -> Optional[str]:
 def validate_inverter_message(data: Dict[str, Any]) -> Dict[str, Any]:
     cleaned: Dict[str, Any] = {}
 
-    for field in ["VG", "IG", "VPV", "IPV", "POWER"]:
-        raw = data.get(field, 0)
+    for field in ["VG", "IG", "VPV", "IPV"]:
         try:
-            cleaned[field] = float(raw)
+            cleaned[field] = float(data.get(field, 0))
         except (TypeError, ValueError):
             cleaned[field] = 0.0
 
-    raw_temp = data.get("temp", 0)
+    # ✅ FIX: read power correctly
+    raw_power = data.get("POWER", data.get("Power", 0))
     try:
-        temp = float(raw_temp)
+        cleaned["POWER"] = float(raw_power)
     except (TypeError, ValueError):
-        temp = 0.0
+        cleaned["POWER"] = 0.0
 
+    temp = float(data.get("temp", 0) or 0)
     cleaned["TEMP1"] = temp
     cleaned["TEMP2"] = temp
 
     cleaned["timestamp"] = data.get("timestamp")
-
     return cleaned
 
 
