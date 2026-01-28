@@ -295,84 +295,39 @@ class Activation(BaseModel):
         ]
 
 class InverterData(models.Model):
-    """
-    Time-series data points for inverter readings.
-    
-    Optimized for 15-minute interval data storage in PostgreSQL.
-    Each record represents a single reading at a specific timestamp.
-    
-    Attributes:
-        inverter: Inverter this data point belongs to
-        timestamp: When this reading was taken (indexed for efficient queries)
-        voltage: Voltage reading in Volts
-        current: Current reading in Amperes
-        power: Calculated power (voltage * current) in Watts
-        temperature: Temperature reading in Celsius
-        grid_connected: Whether inverter is connected to grid
-    """
     inverter = models.ForeignKey(
-        'Inverter', 
-        on_delete=models.CASCADE, 
+        'Inverter',
+        on_delete=models.CASCADE,
         related_name='data_points',
-        verbose_name="Inverter",
         db_index=True
     )
-    timestamp = models.DateTimeField(
-        verbose_name="Timestamp",
-        help_text="When this reading was taken",
-        db_index=True
-    )
+    timestamp = models.DateTimeField(db_index=True)
+
     voltage = models.DecimalField(
-        max_digits=7, 
-        decimal_places=2, 
-        validators=[MinValueValidator(0.0)],
-        verbose_name="Voltage (V)",
-        help_text="Voltage reading in Volts"
+        max_digits=7,
+        decimal_places=2,
+        validators=[MinValueValidator(0.0)]
     )
     current = models.DecimalField(
-        max_digits=7, 
-        decimal_places=2, 
-        validators=[MinValueValidator(0.0)],
-        verbose_name="Current (A)",
-        help_text="Current reading in Amperes"
+        max_digits=7,
+        decimal_places=2,
+        validators=[MinValueValidator(0.0)]
     )
     power = models.DecimalField(
-        max_digits=10, 
-        decimal_places=2,
-        verbose_name="Power (W)",
-        help_text="Calculated power (voltage * current) in Watts"
+        max_digits=10,
+        decimal_places=2
     )
-    temperature = models.FloatField(
-        verbose_name="Temperature (°C)",
-        help_text="Temperature reading in Celsius"
-    )
-    grid_connected = models.BooleanField(
-        default=False,
-        verbose_name="Grid Connected",
-        help_text="Whether inverter is connected to the electrical grid"
-    )
+    temperature = models.FloatField()
+    grid_connected = models.BooleanField(default=False)
 
     class Meta:
         unique_together = (('inverter', 'timestamp'),)
         ordering = ['-timestamp']
-        verbose_name = "Inverter Data Point"
-        verbose_name_plural = "Inverter Data Points"
         indexes = [
             models.Index(fields=['timestamp']),
             models.Index(fields=['inverter', 'timestamp']),
-            models.Index(fields=['inverter', '-timestamp']),  # For latest queries
+            models.Index(fields=['inverter', '-timestamp']),
         ]
-
-    def save(self, *args, **kwargs):
-        """Override save to auto-calculate power."""
-        # Auto-calculate power from voltage and current
-        self.power = self.voltage * self.current
-        super().save(*args, **kwargs)
-    
-    def __str__(self):
-        return f"{self.inverter.serial_number} - {self.timestamp}: {self.power}W"
-
-logger = logging.getLogger(__name__)
 
 class PowerGeneration(models.Model):
     """
