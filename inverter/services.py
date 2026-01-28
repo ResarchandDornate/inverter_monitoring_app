@@ -54,83 +54,56 @@ def extract_inverter_id(topic: str, payload: Dict[str, Any]) -> Optional[str]:
 def validate_inverter_message(data: Dict[str, Any]) -> Dict[str, Any]:
     cleaned: Dict[str, Any] = {}
 
-    # Core electrical fields
-    for field in ["VG", "IG", "VPV", "IPV"]:
+    for field in ["VG", "IG", "VPV", "IPV", "POWER"]:
         raw = data.get(field, 0)
         try:
             cleaned[field] = float(raw)
         except (TypeError, ValueError):
             cleaned[field] = 0.0
 
-    # 🌡 Temperature (ESP sends only `temp`)
     raw_temp = data.get("temp", 0)
     try:
         temp = float(raw_temp)
     except (TypeError, ValueError):
         temp = 0.0
 
-    # Map single temp → TEMP1 & TEMP2
     cleaned["TEMP1"] = temp
     cleaned["TEMP2"] = temp
 
-    # Timestamp (string or null)
     cleaned["timestamp"] = data.get("timestamp")
 
     return cleaned
 
 
-
 def normalize_inverter_data(
     inverter_id: str, cleaned: Dict[str, Any]
 ) -> NormalizedInverterData:
-    """Derive voltage, current, temperature and flags from cleaned data."""
 
-    vg = Decimal(str(cleaned.get("VG", 0.0)))
-    ig = Decimal(str(cleaned.get("IG", 0.0)))
-    vpv = Decimal(str(cleaned.get("VPV", 0.0)))
-    ipv = Decimal(str(cleaned.get("IPV", 0.0)))
+    vg = cleaned.get("VG", 0.0)
+    ig = cleaned.get("IG", 0.0)
+    vpv = cleaned.get("VPV", 0.0)
+    ipv = cleaned.get("IPV", 0.0)
+    incoming_power = cleaned.get("POWER", 0.0)
 
     temp1 = cleaned.get("TEMP1", 0.0)
     temp2 = cleaned.get("TEMP2", 0.0)
 
-    # ---- temperature (safe average) ----
-    temps = [t for t in (temp1, temp2) if isinstance(t, (int, float)) and t > 0]
-    avg_temperature = sum(temps) / len(temps) if temps else 0.0
-
-    # ---- grid detection ----
-    grid_connected = vg > 200 and ig > 0
-
-    # ---- choose ONE electrical domain ----
-    if grid_connected:
-        voltage = vg
-        current = ig
+    # ✅ TRUST DEVICE POWER FIRST
+    if incoming_power > 0:
+        power = incoming_power
     else:
-        voltage = vpv
-        current = ipv
-
-    # ---- server-side timestamp ----
-    record_timestamp = timezone.now()
+        # fallback only if power not sent
+        power = vg * ig
 
     return NormalizedInverterData(
         inverter_id=inverter_id,
-        voltage=voltage.quantize(Decimal("0.01")),
-        current=current.quantize(Decimal("0.01")),
-        power=Decimal("0.00"),  # will be recalculated in model.save()
-        temperature=avg_temperature,
-        grid_connected=grid_connected,
-        timestamp=record_timestamp,
+        voltage=Decimal(f"{vg:.2f}"),
+        current=Decimal(f"{ig:.2f}"),
+        power=Decimal(f"{power:.2f}"),
+        temperature=(temp1 + temp2) / 2.0,
+        grid_connected=vg > 200,
+        timestamp=timezone.now(),
     )
-
-
-
-def should_save_message(_: Dict[str, Any]) -> bool:
-    """Determine whether this message should be persisted.
-
-    Hook for adding filtering, deduplication or rate limiting in future.
-    Currently always returns True.
-    """
-    return True
-
 
 def build_inverter_data_kwargs(
     normalized: NormalizedInverterData, inverter_obj
