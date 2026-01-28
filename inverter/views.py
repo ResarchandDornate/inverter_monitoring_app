@@ -110,6 +110,60 @@ class InverterViewSet(viewsets.ModelViewSet):
         inverter = self.get_object()
         yearly_totals = inverter.get_all_yearly_totals()
         return Response(list(yearly_totals), status=status.HTTP_200_OK)
+    
+    @action(detail=True, methods=['get'])
+    def monthly_energy(self, request, pk=None):
+        """
+        Get total energy generated in a specific month.
+        Query params:
+        - year (int)
+        - month (int, 1-12)
+        """
+        inverter = self.get_object()
+        year = request.query_params.get("year")
+        month = request.query_params.get("month")
+
+        if not year or not month:
+            return Response(
+                {"error": "year and month query parameters are required"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        try:
+            year = int(year)
+            month = int(month)
+
+            if month < 1 or month > 12:
+                raise ValueError("Invalid month")
+
+            start_date = datetime(year, month, 1)
+
+            if month == 12:
+                end_date = datetime(year + 1, 1, 1)
+            else:
+                end_date = datetime(year, month + 1, 1)
+
+            total_energy = inverter.power_generation.filter(
+                measurement_time__gte=start_date,
+                measurement_time__lt=end_date
+            ).aggregate(
+                total=Sum("energy_generated")
+            )["total"] or 0
+
+            return Response(
+                {
+                    "year": year,
+                    "month": month,
+                    "total_energy": float(total_energy),
+                },
+                status=status.HTTP_200_OK
+            )
+
+        except ValueError:
+            return Response(
+                {"error": "Invalid year or month"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
 
 class ActivationViewSet(viewsets.ModelViewSet):
     serializer_class = ActivationSerializer
