@@ -164,6 +164,17 @@ class Inverter(BaseModel):
         verbose_name="Efficiency Factor",
         help_text="Efficiency factor (0.0 to 1.0, where 1.0 = 100% efficiency)"
     )
+    def is_grid_connected(self, timeout_minutes=15):
+        """
+        Grid is considered connected if data was received
+        within the last `timeout_minutes`
+        """
+        last_data = self.data_points.order_by("-timestamp").first()
+
+        if not last_data:
+            return False
+
+        return last_data.timestamp >= timezone.now() - timedelta(minutes=timeout_minutes)
 
     def get_hourly_energy(self, measurement_time):
         """Get energy generated for a specific hour.
@@ -239,6 +250,8 @@ class Inverter(BaseModel):
         manufacturer_name = self.manufacturer.company_name if self.manufacturer else 'Unknown'
         location = self.city or 'Unknown Location'
         return f"{manufacturer_name} {self.name} in {location}"
+    
+    
 
     class Meta:
         ordering = ['-created_at']
@@ -321,6 +334,8 @@ class InverterData(models.Model):
     )
     temperature = models.FloatField()
     grid_connected = models.BooleanField(default=False)
+
+    
 
     class Meta:
         unique_together = (('inverter', 'timestamp'),)

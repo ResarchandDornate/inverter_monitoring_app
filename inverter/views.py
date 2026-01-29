@@ -66,6 +66,18 @@ class InverterViewSet(viewsets.ModelViewSet):
     def perform_create(self, serializer):
         serializer.save(user=self.request.user)
 
+    @action(detail=True, methods=["get"])
+    def grid_status(self, request, pk=None):
+        inverter = self.get_object()
+
+        last_data = inverter.data_points.first()
+
+        return Response({
+            "serial_number": inverter.serial_number,
+            "grid_connected": inverter.is_grid_connected(),
+            "last_seen": last_data.timestamp if last_data else None,
+        })
+
     @action(detail=True, methods=['get'])
     def hourly_energy(self, request, pk=None):
         inverter = self.get_object()
