@@ -386,33 +386,44 @@ class PowerGenerationViewSet(viewsets.ReadOnlyModelViewSet):
     @action(detail=False, methods=["get"], url_path="user-summary")
     def user_summary(self, request):
         """
-        Per-inverter totals + grand total (dashboard ready)
+        Per-inverter totals + grand total + grid status (dashboard ready)
         """
         qs = self.get_queryset()
 
-        per_inverter = (
-            qs.values(
+        # 1️⃣ Energy totals per inverter (from PowerGeneration)
+        energy_map = {
+            row["inverter_id"]: {
+                "serial_number": row["inverter__serial_number"],
+                "name": row["inverter__name"],
+                "energy_kwh": float(row["total_energy"]),
+            }
+            for row in qs.values(
+                "inverter_id",
                 "inverter__serial_number",
                 "inverter__name"
+            ).annotate(
+                total_energy=Sum("energy_generated")
             )
-            .annotate(total_energy=Sum("energy_generated"))
-            .order_by("inverter__name")
-        )
+        }
 
+        # 2️⃣ Fetch actual Inverter objects (for grid status)
+        inverters = Inverter.objects.filter(
+            id__in=energy_map.keys(),
+            user=request.user
+        ).prefetch_related("data_points")
+
+        # 3️⃣ Attach grid_connected using inverter logic
+        for inverter in inverters:
+            energy_map[inverter.id]["grid_connected"] = inverter.is_grid_connected()
+
+        # 4️⃣ Grand total
         grand_total = qs.aggregate(
             total=Sum("energy_generated")
         )["total"] or 0
 
         return Response({
             "total_energy_kwh": float(grand_total),
-            "inverters": [
-                {
-                    "serial_number": row["inverter__serial_number"],
-                    "name": row["inverter__name"],
-                    "energy_kwh": float(row["total_energy"]),
-                }
-                for row in per_inverter
-            ]
+            "inverters": list(energy_map.values())
         })
 
 class MQTTViewSet(viewsets.ViewSet):
