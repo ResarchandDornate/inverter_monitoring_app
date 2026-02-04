@@ -25,6 +25,8 @@ urlpatterns = [
     path("admin/", admin.site.urls),
     path('api/auth/', include('accounts.urls')),
     path('api/inverter/', include('inverter.urls')),
+    path('api/chatbot/', include('chatbot.urls')),
     path('api-token-auth/', obtain_auth_token, name='api_token_auth'),
+
    
 ]

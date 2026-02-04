@@ -18,6 +18,7 @@ from logging.handlers import RotatingFileHandler  # noqa: F401  (used via LOGGIN
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 load_dotenv(BASE_DIR / ".env")
+OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY")
 
 # SECURITY WARNING: keep the secret key used in production secret!
 SECRET_KEY = os.getenv("SECRET_KEY")
@@ -46,6 +47,8 @@ INSTALLED_APPS = [
     'django_filters',
     'master',
     'channels',
+    'chatbot'
+
 ]
 
 # ASGI Configuration
@@ -342,3 +345,5 @@ CSRF_USE_SESSIONS = False
 
 # Admin URL (can be changed for security)
 ADMIN_URL = os.getenv('ADMIN_URL', 'admin/')
+
+
