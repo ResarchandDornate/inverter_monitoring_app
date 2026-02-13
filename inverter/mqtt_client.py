@@ -106,46 +106,34 @@ def on_message(client, userdata, msg):
 def start_mqtt_client():
     global mqtt_client
 
-    if mqtt_client:
-        logger.info("MQTT client already running")
-        return mqtt_client
-
     client = mqtt.Client(client_id=settings.MQTT_CLIENT_ID)
+
     client.on_connect = on_connect
     client.on_message = on_message
 
-    # Username & Password (required because allow_anonymous false)
-    if settings.MQTT_USERNAME and settings.MQTT_PASSWORD:
-        client.username_pw_set(
-            settings.MQTT_USERNAME,
-            settings.MQTT_PASSWORD,
-        )
+    client.username_pw_set(
+        settings.MQTT_USERNAME,
+        settings.MQTT_PASSWORD,
+    )
 
-    # ✅ TLS CONFIGURATION (MANDATORY for 8883)
     client.tls_set(
-        ca_certs="/etc/mosquitto/certs/ca.crt",
+        ca_certs="/etc/ssl/certs/ca-certificates.crt",
         tls_version=ssl.PROTOCOL_TLSv1_2,
     )
 
     client.tls_insecure_set(False)
 
-    # ✅ Must match certificate domain
-    client.connect(
-        settings.MQTT_BROKER_HOST,   # e.g. lab.ornatesolar.com
-        8883,
-        keepalive=60,
-    )
-
-    logger.info(
-        "Connecting to MQTT broker %s:8883 via TLS",
-        settings.MQTT_BROKER_HOST,
-    )
-
-    # ✅ IMPORTANT: Use blocking loop for systemd
-    client.loop_forever()
-
-    mqtt_client = client
-    return mqtt_client
+    while True:
+        try:
+            client.connect(
+                settings.MQTT_BROKER_HOST,
+                8883,
+                keepalive=60,
+            )
+            client.loop_forever()
+        except Exception:
+            logger.exception("MQTT crashed, retrying in 5 seconds")
+            time.sleep(5)
 
 
 
