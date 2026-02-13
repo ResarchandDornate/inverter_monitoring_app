@@ -8,6 +8,7 @@ import json
 import logging
 import time
 from typing import Optional
+import ssl
 
 import paho.mqtt.client as mqtt
 from asgiref.sync import async_to_sync
@@ -101,6 +102,7 @@ def on_message(client, userdata, msg):
 # MQTT CLIENT CONTROL
 # -------------------------------------------------------------------
 
+
 def start_mqtt_client():
     global mqtt_client
 
@@ -112,26 +114,39 @@ def start_mqtt_client():
     client.on_connect = on_connect
     client.on_message = on_message
 
+    # Username & Password (required because allow_anonymous false)
     if settings.MQTT_USERNAME and settings.MQTT_PASSWORD:
         client.username_pw_set(
             settings.MQTT_USERNAME,
             settings.MQTT_PASSWORD,
         )
 
+    # ✅ TLS CONFIGURATION (MANDATORY for 8883)
+    client.tls_set(
+        ca_certs="/etc/mosquitto/certs/ca.crt",
+        tls_version=ssl.PROTOCOL_TLSv1_2,
+    )
+
+    client.tls_insecure_set(False)
+
+    # ✅ Must match certificate domain
     client.connect(
-        settings.MQTT_BROKER_HOST,
-        settings.MQTT_BROKER_PORT,
+        settings.MQTT_BROKER_HOST,   # e.g. lab.ornatesolar.com
+        8883,
         keepalive=60,
     )
-    client.loop_start()
+
+    logger.info(
+        "Connecting to MQTT broker %s:8883 via TLS",
+        settings.MQTT_BROKER_HOST,
+    )
+
+    # ✅ IMPORTANT: Use blocking loop for systemd
+    client.loop_forever()
 
     mqtt_client = client
-    logger.info(
-        "Started MQTT client, connected to %s:%s",
-        settings.MQTT_BROKER_HOST,
-        settings.MQTT_BROKER_PORT,
-    )
     return mqtt_client
+
 
 
 def stop_mqtt_client():
