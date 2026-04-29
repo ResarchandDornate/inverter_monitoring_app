@@ -1,0 +1,20 @@
+name: Deploy Inverter Monitor
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-inverter
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    uses: Ornate-solar-resarchd/portals-infra/.github/workflows/_deploy-template.yml@main
+    with:
+      portal:       inverter
+      portal_dir:   inverter_monitoring_app
+      services:     "inverter-backend"
+      health_url:   "https://inverter.unityess.cloud/"
+      runner_label: inverter
