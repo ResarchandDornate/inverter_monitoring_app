@@ -56,7 +56,8 @@ from typing import Dict, Any
 
 def validate_inverter_message(data: Dict[str, Any]) -> Dict[str, Any]:
     """
-    Validate and normalize raw MQTT payload from ESP32.
+    Validate and normalize raw 
+    MQTT payload from ESP32.
 
     Ensures:
     - Numeric coercion

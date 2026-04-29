@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(ssh ubuntu@13.201.114.43 \"echo 'connected'\")",
+      "Bash(ssh -o StrictHostKeyChecking=no -o ConnectTimeout=5 krishna@ornatesolar.in \"echo 'connected'\")"
+    ]
+  }
+}

@@ -332,6 +332,22 @@ class InverterData(models.Model):
         max_digits=10,
         decimal_places=2
     )
+    vpv = models.DecimalField(
+        max_digits=7,
+        decimal_places=2,
+        validators=[MinValueValidator(0.0)],
+        null=True,
+        blank=True,
+        help_text="PV voltage (DC side)"
+    )
+    ipv = models.DecimalField(
+        max_digits=7,
+        decimal_places=2,
+        validators=[MinValueValidator(0.0)],
+        null=True,
+        blank=True,
+        help_text="PV current (DC side)"
+    )
     temperature = models.FloatField()
     grid_connected = models.BooleanField(default=False)
 

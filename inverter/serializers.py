@@ -66,7 +66,7 @@ class InverterDataSerializer(serializers.ModelSerializer):
         model = InverterData
         fields = [
             'id', 'inverter', 'manufacturer', 'manufacturer_id', 'timestamp', 'voltage',
-            'current', 'power', 'temperature', 'grid_connected'
+            'current', 'power', 'vpv', 'ipv', 'temperature', 'grid_connected'
         ]
         read_only_fields = ['id', 'timestamp', 'power']
 
