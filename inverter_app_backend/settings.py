@@ -81,6 +81,9 @@ ALLOWED_HOSTS = os.getenv(
 
 CSRF_TRUSTED_ORIGINS = [
     'http://13.201.114.43',
+    'https://inverter.unityess.cloud',
+    'https://*.unityess.cloud',
+    'http://localhost:8002',
 ]
 ROOT_URLCONF = "inverter_app_backend.urls"
 
