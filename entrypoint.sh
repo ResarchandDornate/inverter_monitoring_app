@@ -1,5 +1,8 @@
 #!/bin/sh
 
+echo "Ensuring runtime deps..."
+pip install --quiet rapidfuzz || true
+
 echo "Running migrations..."
 python manage.py migrate --noinput
 

@@ -116,18 +116,20 @@ def start_mqtt_client():
         settings.MQTT_PASSWORD,
     )
 
-    client.tls_set(
-        ca_certs="/etc/ssl/certs/ca-certificates.crt",
-        tls_version=ssl.PROTOCOL_TLSv1_2,
-    )
+    port = int(getattr(settings, "MQTT_BROKER_PORT", 1883))
 
-    client.tls_insecure_set(False)
+    if port == 8883:
+        client.tls_set(
+            ca_certs="/etc/ssl/certs/ca-certificates.crt",
+            tls_version=ssl.PROTOCOL_TLSv1_2,
+        )
+        client.tls_insecure_set(False)
 
     while True:
         try:
             client.connect(
                 settings.MQTT_BROKER_HOST,
-                8883,
+                port,
                 keepalive=60,
             )
             client.loop_forever()
